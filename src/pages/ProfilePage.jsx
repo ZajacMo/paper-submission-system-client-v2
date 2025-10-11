@@ -16,7 +16,7 @@ import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { useForm, zodResolver } from '@mantine/form';
 import { z } from 'zod';
 import { useAuth } from '../features/auth/AuthProvider.jsx';
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import api from '../api/axios.js';
 import { endpoints } from '../api/endpoints.js';
@@ -91,6 +91,8 @@ export default function ProfilePage() {
     return editorSchema;
   }, [role]);
 
+  const [isEditing, setIsEditing] = useState(false);
+
   const form = useForm({
     initialValues: defaultValues,
     validate: zodResolver(schema)
@@ -101,18 +103,16 @@ export default function ProfilePage() {
     queryFn: async () => {
       const response = await api.get(endpoints.users.profile);
       return response.data;
-    },
-    onSuccess: (profile) => {
-      applyProfileToForm(profile);
     }
   });
 
   useEffect(() => {
     if (data) {
       applyProfileToForm(data);
+      setIsEditing(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [data]);
+  }, [data, role]);
 
   function extractPhone(profile) {
     return (
@@ -127,8 +127,9 @@ export default function ProfilePage() {
 
   function applyProfileToForm(profile) {
     const phoneValue = extractPhone(profile);
+    let values;
     if (role === 'author') {
-      form.setValues({
+      values = {
         name: profile.name || '',
         age: profile.age || 30,
         email: profile.email || '',
@@ -146,9 +147,9 @@ export default function ProfilePage() {
         research_direction: profile.research_direction || '',
         bio: profile.bio || '',
         phone: phoneValue
-      });
+      };
     } else if (role === 'expert') {
-      form.setValues({
+      values = {
         name: profile.name || '',
         title: profile.title || '',
         institution: profile.institution || '',
@@ -158,16 +159,20 @@ export default function ProfilePage() {
         bank_account: profile.bank_account || '',
         bank_name: profile.bank_name || '',
         account_holder: profile.account_holder || ''
-      });
+      };
     } else {
-      form.setValues({
+      values = {
         name: profile.name || '',
         email: profile.email || '',
         phone: phoneValue,
         department: profile.department || '',
         title: profile.title || ''
-      });
+      };
     }
+    const nextValues = values ?? defaultValues;
+    form.setValues(nextValues);
+    form.resetDirty(nextValues);
+    form.clearErrors();
   }
 
   const mutation = useMutation({
@@ -180,12 +185,14 @@ export default function ProfilePage() {
       await refreshProfile();
       return payload;
     },
-    onSuccess: () => {
+    onSuccess: (payload) => {
       notifications.show({
         title: '保存成功',
         message: '个人信息已更新',
         color: 'green'
       });
+      applyProfileToForm(payload);
+      setIsEditing(false);
     },
     onError: (error) => {
       const fieldErrors = error.response?.data?.errors;
@@ -202,13 +209,43 @@ export default function ProfilePage() {
         <LoadingOverlay visible={isLoading || mutation.isPending} overlayProps={{ blur: 2 }} />
         <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
           <Stack gap="xl">
-            {role === 'author' && <AuthorFields form={form} />}
-            {role === 'expert' && <ExpertFields form={form} />}
-            {role === 'editor' && <EditorFields form={form} />}
+            {role === 'author' && <AuthorFields form={form} isEditing={isEditing} />}
+            {role === 'expert' && <ExpertFields form={form} isEditing={isEditing} />}
+            {role === 'editor' && <EditorFields form={form} isEditing={isEditing} />}
             <Group justify="flex-end">
-              <Button type="submit" loading={mutation.isPending}>
-                保存信息
-              </Button>
+              {isEditing ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => {
+                      if (data) {
+                        applyProfileToForm(data);
+                      } else {
+                        form.reset();
+                        form.clearErrors();
+                      }
+                      setIsEditing(false);
+                    }}
+                    disabled={mutation.isPending}
+                  >
+                    取消保存
+                  </Button>
+                  <Button type="submit" loading={mutation.isPending}>
+                    保存信息
+                  </Button>
+                </>
+              ) : (
+                <Button
+                  type="button"
+                  onClick={() => {
+                    form.clearErrors();
+                    setIsEditing(true);
+                  }}
+                >
+                  编辑信息
+                </Button>
+              )}
             </Group>
           </Stack>
         </form>
@@ -217,28 +254,39 @@ export default function ProfilePage() {
   );
 }
 
-function AuthorFields({ form }) {
+function AuthorFields({ form, isEditing }) {
   const institutions = form.values.institutions;
   return (
     <Stack gap="md">
       <Title order={4}>基础信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} />
+        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
         <NumberInput
           label="年龄"
           required
           min={18}
           max={120}
           {...form.getInputProps('age')}
+          disabled={!isEditing}
         />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} />
-        <TextInput label="手机" required {...form.getInputProps('phone')} />
-        <TextInput label="学位" required {...form.getInputProps('degree')} />
-        <TextInput label="职称" required {...form.getInputProps('title')} />
-        <TextInput label="籍贯" required {...form.getInputProps('origin')} />
-        <TextInput label="研究方向" required {...form.getInputProps('research_direction')} />
+        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
+        <TextInput label="手机" required {...form.getInputProps('phone')} disabled={!isEditing} />
+        <TextInput label="学位" required {...form.getInputProps('degree')} disabled={!isEditing} />
+        <TextInput label="职称" required {...form.getInputProps('title')} disabled={!isEditing} />
+        <TextInput label="籍贯" required {...form.getInputProps('origin')} disabled={!isEditing} />
+        <TextInput
+          label="研究方向"
+          required
+          {...form.getInputProps('research_direction')}
+          disabled={!isEditing}
+        />
       </SimpleGrid>
-      <Textarea label="个人简介" minRows={3} {...form.getInputProps('bio')} />
+      <Textarea
+        label="个人简介"
+        minRows={3}
+        {...form.getInputProps('bio')}
+        disabled={!isEditing}
+      />
 
       <Group justify="space-between">
         <Title order={4}>工作单位</Title>
@@ -248,6 +296,7 @@ function AuthorFields({ form }) {
           onClick={() =>
             form.insertListItem('institutions', { name: '', city: '', postal_code: '' })
           }
+          disabled={!isEditing}
         >
           添加单位
         </Button>
@@ -262,6 +311,7 @@ function AuthorFields({ form }) {
                   color="red"
                   onClick={() => form.removeListItem('institutions', index)}
                   aria-label="删除单位"
+                  disabled={!isEditing}
                 >
                   <IconTrash size={16} />
                 </ActionIcon>
@@ -272,16 +322,19 @@ function AuthorFields({ form }) {
                 label="单位名称"
                 required
                 {...form.getInputProps(`institutions.${index}.name`)}
+                disabled={!isEditing}
               />
               <TextInput
                 label="城市"
                 required
                 {...form.getInputProps(`institutions.${index}.city`)}
+                disabled={!isEditing}
               />
               <TextInput
                 label="邮编"
                 required
                 {...form.getInputProps(`institutions.${index}.postal_code`)}
+                disabled={!isEditing}
               />
             </SimpleGrid>
           </Card>
@@ -292,51 +345,93 @@ function AuthorFields({ form }) {
 }
 
 AuthorFields.propTypes = {
-  form: PropTypes.object.isRequired
+  form: PropTypes.object.isRequired,
+  isEditing: PropTypes.bool.isRequired
 };
 
-function ExpertFields({ form }) {
+function ExpertFields({ form, isEditing }) {
   return (
     <Stack gap="md">
       <Title order={4}>专家信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} />
-        <TextInput label="职称" required {...form.getInputProps('title')} />
-        <TextInput label="单位" required {...form.getInputProps('institution')} />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} />
-        <TextInput label="联系电话" required {...form.getInputProps('phone')} />
-        <TextInput label="研究方向" required {...form.getInputProps('research_direction')} />
+        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
+        <TextInput label="职称" required {...form.getInputProps('title')} disabled={!isEditing} />
+        <TextInput
+          label="单位"
+          required
+          {...form.getInputProps('institution')}
+          disabled={!isEditing}
+        />
+        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
+        <TextInput
+          label="联系电话"
+          required
+          {...form.getInputProps('phone')}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="研究方向"
+          required
+          {...form.getInputProps('research_direction')}
+          disabled={!isEditing}
+        />
       </SimpleGrid>
 
       <Title order={4}>收款信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="银行卡号" required {...form.getInputProps('bank_account')} />
-        <TextInput label="银行名称" required {...form.getInputProps('bank_name')} />
-        <TextInput label="开户名" required {...form.getInputProps('account_holder')} />
+        <TextInput
+          label="银行卡号"
+          required
+          {...form.getInputProps('bank_account')}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="银行名称"
+          required
+          {...form.getInputProps('bank_name')}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="开户名"
+          required
+          {...form.getInputProps('account_holder')}
+          disabled={!isEditing}
+        />
       </SimpleGrid>
     </Stack>
   );
 }
 
 ExpertFields.propTypes = {
-  form: PropTypes.object.isRequired
+  form: PropTypes.object.isRequired,
+  isEditing: PropTypes.bool.isRequired
 };
 
-function EditorFields({ form }) {
+function EditorFields({ form, isEditing }) {
   return (
     <Stack gap="md">
       <Title order={4}>编辑信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} />
-        <TextInput label="联系电话" required {...form.getInputProps('phone')} />
-        <TextInput label="职称" {...form.getInputProps('title')} />
-        <TextInput label="所属部门" {...form.getInputProps('department')} />
+        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
+        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
+        <TextInput
+          label="联系电话"
+          required
+          {...form.getInputProps('phone')}
+          disabled={!isEditing}
+        />
+        <TextInput label="职称" {...form.getInputProps('title')} disabled={!isEditing} />
+        <TextInput
+          label="所属部门"
+          {...form.getInputProps('department')}
+          disabled={!isEditing}
+        />
       </SimpleGrid>
     </Stack>
   );
 }
 
 EditorFields.propTypes = {
-  form: PropTypes.object.isRequired
+  form: PropTypes.object.isRequired,
+  isEditing: PropTypes.bool.isRequired
 };
