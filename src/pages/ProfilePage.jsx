@@ -5,6 +5,8 @@ import {
   Group,
   LoadingOverlay,
   NumberInput,
+  Paper,
+  ScrollArea,
   SimpleGrid,
   Stack,
   Text,
@@ -16,12 +18,22 @@ import { IconPlus, IconTrash } from "@tabler/icons-react";
 import { useForm, zodResolver } from "@mantine/form";
 import { z } from "zod";
 import { useAuth } from "../features/auth/AuthProvider.jsx";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import api from "../api/axios.js";
 import { endpoints } from "../api/endpoints.js";
 import { notifications } from "@mantine/notifications";
 import PropTypes from "prop-types";
+import { useDebouncedValue } from "@mantine/hooks";
+
+const authorInstitutionSchema = z.object({
+  uuid: z.string().optional(),
+  institution_id: z.union([z.string(), z.number()]).optional(),
+  is_new: z.boolean().optional(),
+  name: z.string().optional(),
+  city: z.string().optional(),
+  zip_code: z.string().optional(),
+});
 
 const authorSchema = z.object({
   name: z.string().trim().min(1, "请输入姓名"),
@@ -29,11 +41,7 @@ const authorSchema = z.object({
   email: z.string().email("请输入正确的邮箱"),
   institutions: z
     .array(
-      z.object({
-        name: z.string().optional(),
-        city: z.string().optional(),
-        zip_code: z.string().optional(),
-      })
+      authorInstitutionSchema
     )
     .optional(),
   degree: z.string().optional(),
@@ -50,16 +58,21 @@ const authorSchema = z.object({
     ),
 });
 
+const expertInstitutionSchema = z.object({
+  uuid: z.string().optional(),
+  institution_id: z.union([z.string(), z.number()]).optional(),
+  is_new: z.boolean().optional(),
+  name: z.string().min(1, "请输入单位名称"),
+  city: z.string().min(1, "请输入城市"),
+  zip_code: z.string().min(1, "请输入邮编"),
+});
+
 const expertSchema = z.object({
   name: z.string().min(1, "请输入姓名"),
   title: z.string().min(1, "请输入职称"),
   institutions: z
     .array(
-      z.object({
-        name: z.string().min(1, "请输入单位名称"),
-        city: z.string().min(1, "请输入城市"),
-        zip_code: z.string().min(1, "请输入邮编"),
-      })
+      expertInstitutionSchema
     )
     .min(1, "至少填写一个单位"),
   email: z.string().email("请输入正确的邮箱"),
@@ -84,11 +97,39 @@ const editorSchema = z.object({
   title: z.string().optional(),
 });
 
+const createTempId = () =>
+  `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+
+const toStringOrEmpty = (value) => {
+  if (value === undefined || value === null) {
+    return "";
+  }
+  return String(value);
+};
+
+const trimString = (value) => toStringOrEmpty(value).trim();
+
+function createInstitutionEntry(data = {}) {
+  return {
+    uuid: data.uuid || createTempId(),
+    institution_id:
+      data.institution_id !== undefined
+        ? toStringOrEmpty(data.institution_id)
+        : data.id !== undefined
+        ? toStringOrEmpty(data.id)
+        : "",
+    name: data.name || "",
+    city: data.city || "",
+    zip_code: data.zip_code || data.postal_code || "",
+    is_new: Boolean(data.is_new),
+  };
+}
+
 const defaultValues = {
   name: "",
   age: 30,
   email: "",
-  institutions: [{ name: "", city: "", zip_code: "" }],
+  institutions: [createInstitutionEntry()],
   degree: "",
   title: "",
   hometown: "",
@@ -111,6 +152,8 @@ export default function ProfilePage() {
   }, [role]);
 
   const [isEditing, setIsEditing] = useState(false);
+  const initialInstitutionIdsRef = useRef([]);
+  const isInstitutionRole = role === "author" || role === "expert";
 
   const form = useForm({
     initialValues: defaultValues,
@@ -154,12 +197,8 @@ export default function ProfilePage() {
         email: profile.email || "",
         institutions:
           profile.institutions?.length > 0
-            ? profile.institutions.map((item) => ({
-                name: item.name || "",
-                city: item.city || "",
-                zip_code: item.zip_code || "",
-              }))
-            : [{ name: "", city: "", zip_code: "" }],
+            ? profile.institutions.map((item) => createInstitutionEntry(item))
+            : [createInstitutionEntry()],
         degree: profile.degree || "",
         title: profile.title || "",
         hometown: profile.hometown || "",
@@ -199,12 +238,8 @@ export default function ProfilePage() {
         research_areas: profile.research_areas || "",
         institutions:
           normalizedInstitutions.length > 0
-            ? normalizedInstitutions.map((item) => ({
-                name: item?.name || "",
-                city: item?.city || "",
-                zip_code: item?.zip_code || item?.postal_code || "",
-              }))
-            : [{ name: "", city: "", zip_code: "" }],
+            ? normalizedInstitutions.map((item) => createInstitutionEntry(item))
+            : [createInstitutionEntry()],
         bank_account: profile.bank_account || "",
         bank_name: profile.bank_name || "",
         account_holder: profile.account_holder || "",
@@ -222,27 +257,215 @@ export default function ProfilePage() {
     form.setValues(nextValues);
     form.resetDirty(nextValues);
     form.clearErrors();
+    if (isInstitutionRole) {
+      const ids =
+        nextValues.institutions
+          ?.map((item) => toStringOrEmpty(item?.institution_id))
+          .filter((id) => id) ?? [];
+      initialInstitutionIdsRef.current = ids;
+    } else {
+      initialInstitutionIdsRef.current = [];
+    }
+  }
+
+  async function syncInstitutions(rawInstitutions) {
+    if (!isInstitutionRole) {
+      return [];
+    }
+
+    if (!Array.isArray(rawInstitutions)) {
+      rawInstitutions = [];
+    }
+
+    const initialIdsSet = new Set(
+      (initialInstitutionIdsRef.current ?? [])
+        .map((item) => toStringOrEmpty(item))
+        .filter(Boolean)
+    );
+
+    const normalized = [];
+    const linkIds = new Set();
+    const currentIds = new Set();
+    const toCreate = [];
+    const fieldErrors = {};
+
+    rawInstitutions.forEach((item, index) => {
+      const trimmedName = trimString(item?.name);
+      const trimmedCity = trimString(item?.city);
+      const trimmedZip = trimString(item?.zip_code);
+      const rawId = item?.institution_id ?? item?.id;
+      const institutionId = rawId ? toStringOrEmpty(rawId) : "";
+      const hasContent =
+        Boolean(institutionId) ||
+        Boolean(trimmedName) ||
+        Boolean(trimmedCity) ||
+        Boolean(trimmedZip);
+
+      if (!hasContent) {
+        return;
+      }
+
+      const normalizedEntry = {
+        index,
+        name: trimmedName,
+        city: trimmedCity,
+        zip_code: trimmedZip,
+        institution_id: institutionId,
+      };
+
+      normalized.push(normalizedEntry);
+
+      if (institutionId) {
+        currentIds.add(institutionId);
+        if (!initialIdsSet.has(institutionId)) {
+          linkIds.add(institutionId);
+        }
+        return;
+      }
+
+      if (!trimmedName) {
+        fieldErrors[`institutions.${index}.name`] = "请输入单位名称";
+        return;
+      }
+
+      if (!trimmedCity) {
+        fieldErrors[`institutions.${index}.city`] =
+          "未找到匹配机构时，请填写城市信息";
+      }
+
+      if (Object.keys(fieldErrors).length === 0) {
+        toCreate.push(normalizedEntry);
+      }
+    });
+
+    if (Object.keys(fieldErrors).length > 0) {
+      const validationError = new Error("INSTITUTION_VALIDATION_FAILED");
+      validationError.fieldErrors = fieldErrors;
+      throw validationError;
+    }
+
+    const unlinkIds = Array.from(initialIdsSet).filter(
+      (id) => !currentIds.has(id)
+    );
+
+    for (const entry of toCreate) {
+      const createPayload = {
+        name: entry.name,
+        city: entry.city,
+      };
+      if (entry.zip_code) {
+        createPayload.zip_code = entry.zip_code;
+      }
+      const response = await api.post(
+        endpoints.institutions.create,
+        createPayload
+      );
+      const createdId =
+        response.data?.institution_id ?? response.data?.id;
+      if (!createdId) {
+        throw new Error("创建机构失败");
+      }
+      const idStr = toStringOrEmpty(createdId);
+      entry.institution_id = idStr;
+      linkIds.add(idStr);
+      currentIds.add(idStr);
+      form.setFieldValue(`institutions.${entry.index}.institution_id`, idStr);
+      form.setFieldValue(`institutions.${entry.index}.is_new`, false);
+    }
+
+    const linkEndpoint =
+      role === "author"
+        ? endpoints.institutions.linkAuthor
+        : endpoints.institutions.linkExpert;
+    const unlinkEndpoint =
+      role === "author"
+        ? endpoints.institutions.unlinkAuthor
+        : endpoints.institutions.unlinkExpert;
+
+    const safeLink = async (id) => {
+      try {
+        await api.post(linkEndpoint, { institution_id: id });
+      } catch (error) {
+        const message = error.response?.data?.message;
+        if (
+          error.response?.status === 400 &&
+          message &&
+          message.includes("已关联")
+        ) {
+          return;
+        }
+        throw error;
+      }
+    };
+
+    const safeUnlink = async (id) => {
+      try {
+        await api.delete(unlinkEndpoint(id));
+      } catch (error) {
+        const message = error.response?.data?.message;
+        if (
+          error.response?.status === 404 &&
+          message &&
+          message.includes("未关联")
+        ) {
+          return;
+        }
+        throw error;
+      }
+    };
+
+    for (const id of linkIds) {
+      await safeLink(id);
+    }
+
+    for (const id of unlinkIds) {
+      await safeUnlink(id);
+    }
+
+    initialInstitutionIdsRef.current = Array.from(currentIds);
+
+    return normalized;
   }
 
   const mutation = useMutation({
     mutationFn: async (values) => {
       const payload = {
         ...values,
-        phone: values.phone?.trim?.() || "",
+        phone: trimString(values.phone),
       };
-      if (
-        (role === "author" || role === "expert") &&
-        Array.isArray(values.institutions)
-      ) {
-        payload.institutions = values.institutions.map((item) => ({
-          name: item?.name?.trim?.() || "",
-          city: item?.city?.trim?.() || "",
-          zip_code: item?.zip_code?.trim?.() || "",
+
+      let normalizedInstitutions = [];
+      const shouldSyncInstitutions =
+        isInstitutionRole && Array.isArray(values.institutions);
+
+      if (shouldSyncInstitutions) {
+        normalizedInstitutions = await syncInstitutions(values.institutions);
+        payload.institutions = normalizedInstitutions.map((item) => ({
+          name: item.name,
+          city: item.city,
+          zip_code: item.zip_code,
         }));
+      } else if (!shouldSyncInstitutions) {
+        delete payload.institutions;
       }
+
       await api.put(endpoints.users.profile, payload);
       await refreshProfile();
-      return payload;
+
+      const result = {
+        ...payload,
+      };
+
+      if (shouldSyncInstitutions) {
+        result.institutions = normalizedInstitutions.map((item) => ({
+          institution_id: item.institution_id,
+          name: item.name,
+          city: item.city,
+          zip_code: item.zip_code,
+        }));
+      }
+
+      return result;
     },
     onSuccess: (payload) => {
       notifications.show({
@@ -254,6 +477,10 @@ export default function ProfilePage() {
       setIsEditing(false);
     },
     onError: (error) => {
+      if (error.fieldErrors) {
+        form.setErrors(error.fieldErrors);
+        return;
+      }
       const fieldErrors = error.response?.data?.errors;
       if (fieldErrors) {
         form.setErrors(fieldErrors);
@@ -386,13 +613,7 @@ function AuthorFields({ form, isEditing }) {
         <Button
           variant="light"
           leftSection={<IconPlus size={16} />}
-          onClick={() =>
-            form.insertListItem("institutions", {
-              name: "",
-              city: "",
-              zip_code: "",
-            })
-          }
+          onClick={() => form.insertListItem("institutions", createInstitutionEntry())}
           disabled={!isEditing}
         >
           添加单位
@@ -414,23 +635,11 @@ function AuthorFields({ form, isEditing }) {
                 </ActionIcon>
               )}
             </Group>
-            <SimpleGrid cols={{ base: 1, sm: 3 }}>
-              <TextInput
-                label="单位名称"
-                {...form.getInputProps(`institutions.${index}.name`)}
-                disabled={!isEditing}
-              />
-              <TextInput
-                label="城市"
-                {...form.getInputProps(`institutions.${index}.city`)}
-                disabled={!isEditing}
-              />
-              <TextInput
-                label="邮编"
-                {...form.getInputProps(`institutions.${index}.zip_code`)}
-                disabled={!isEditing}
-              />
-            </SimpleGrid>
+            <InstitutionField
+              form={form}
+              index={index}
+              isEditing={isEditing}
+            />
           </Card>
         ))}
       </Stack>
@@ -441,6 +650,247 @@ function AuthorFields({ form, isEditing }) {
 AuthorFields.propTypes = {
   form: PropTypes.object.isRequired,
   isEditing: PropTypes.bool.isRequired,
+};
+
+function InstitutionField({
+  form,
+  index,
+  isEditing,
+  requiredName = false,
+  requiredCity = false,
+  requiredZip = false,
+}) {
+  const value = form.values.institutions?.[index] ?? {};
+  const namePath = `institutions.${index}.name`;
+  const cityPath = `institutions.${index}.city`;
+  const zipPath = `institutions.${index}.zip_code`;
+  const idPath = `institutions.${index}.institution_id`;
+
+  const nameField = form.getInputProps(namePath);
+  const cityField = form.getInputProps(cityPath);
+  const zipField = form.getInputProps(zipPath);
+
+  const nameValue = value.name ?? "";
+  const [debouncedName] = useDebouncedValue(nameValue, 300);
+  const [allowManualEntry, setAllowManualEntry] = useState(() => {
+    if (value.institution_id) {
+      return false;
+    }
+    return Boolean(value.city || value.zip_code);
+  });
+  const [suggestions, setSuggestions] = useState([]);
+  const [isSearching, setIsSearching] = useState(false);
+
+  useEffect(() => {
+    if (!isEditing) {
+      setSuggestions([]);
+      return;
+    }
+
+    const trimmedName = debouncedName?.trim();
+    if (!trimmedName) {
+      setSuggestions([]);
+      setAllowManualEntry(
+        !value.institution_id && Boolean(value.city || value.zip_code)
+      );
+      return;
+    }
+
+    if (
+      value.institution_id &&
+      trimmedName === (value.name || "").trim()
+    ) {
+      setSuggestions([]);
+      return;
+    }
+
+    let canceled = false;
+    setIsSearching(true);
+    api
+      .get(endpoints.institutions.search, { params: { name: trimmedName } })
+      .then((response) => {
+        if (canceled) return;
+        const list = Array.isArray(response.data) ? response.data : [];
+        setSuggestions(list);
+        setAllowManualEntry(!value.institution_id && list.length === 0);
+      })
+      .catch(() => {
+        if (canceled) return;
+        setSuggestions([]);
+        setAllowManualEntry(!value.institution_id);
+      })
+      .finally(() => {
+        if (!canceled) {
+          setIsSearching(false);
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [
+    debouncedName,
+    isEditing,
+    value.city,
+    value.zip_code,
+    value.institution_id,
+    value.name,
+  ]);
+
+  const handleNameChange = (event) => {
+    if (!isEditing) return;
+    const nextValue = event.currentTarget.value;
+    const wasManual = allowManualEntry;
+    form.setFieldValue(namePath, nextValue);
+    form.setFieldValue(idPath, "");
+    form.setFieldValue(`institutions.${index}.is_new`, false);
+    if (!wasManual) {
+      form.setFieldValue(cityPath, "");
+      form.setFieldValue(zipPath, "");
+      setAllowManualEntry(false);
+    }
+    if (!nextValue) {
+      setSuggestions([]);
+    }
+  };
+
+  const handleSuggestionSelect = (item) => {
+    const institutionId =
+      item?.institution_id ?? item?.id ?? item?.institutionId ?? "";
+    form.setFieldValue(namePath, item?.name || "");
+    form.setFieldValue(cityPath, item?.city || "");
+    form.setFieldValue(zipPath, item?.zip_code || item?.postal_code || "");
+    form.setFieldValue(idPath, toStringOrEmpty(institutionId));
+    form.setFieldValue(`institutions.${index}.is_new`, false);
+    form.clearFieldError?.(namePath);
+    form.clearFieldError?.(cityPath);
+    form.clearFieldError?.(zipPath);
+    setAllowManualEntry(false);
+    setSuggestions([]);
+  };
+
+  useEffect(() => {
+    if (!isEditing) {
+      setAllowManualEntry((prev) => prev && !value.institution_id);
+    }
+  }, [isEditing, value.institution_id]);
+
+  useEffect(() => {
+    if (value.institution_id) {
+      setAllowManualEntry(false);
+    }
+  }, [value.institution_id]);
+
+  const canEditDetails = isEditing && allowManualEntry;
+  const showNoResultHint =
+    isEditing &&
+    !isSearching &&
+    !value.institution_id &&
+    debouncedName?.trim() &&
+    suggestions.length === 0;
+
+  return (
+    <Stack gap={6}>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+        <TextInput
+          label="单位名称"
+          value={nameValue}
+          onChange={handleNameChange}
+          onBlur={nameField.onBlur}
+          onFocus={nameField.onFocus}
+          error={nameField.error}
+          disabled={!isEditing}
+          withAsterisk={requiredName}
+        />
+        <TextInput
+          label="城市"
+          {...cityField}
+          disabled={!canEditDetails}
+          withAsterisk={requiredCity}
+        />
+        <TextInput
+          label="邮编"
+          {...zipField}
+          disabled={!canEditDetails}
+          withAsterisk={requiredZip}
+        />
+      </SimpleGrid>
+
+      {isEditing && isSearching && (
+        <Text size="sm" c="dimmed">
+          正在搜索匹配的机构...
+        </Text>
+      )}
+
+      {isEditing && !isSearching && suggestions.length > 0 && (
+        <Paper withBorder radius="md" p="sm">
+          <Stack gap={8}>
+            <Text size="sm" fw={500} lh={1.4}>
+              匹配的机构
+            </Text>
+            <ScrollArea.Autosize mah={240} scrollbarSize={6}>
+              <Stack gap={6}>
+                {suggestions.map((item) => {
+                  const key =
+                    item?.institution_id ??
+                    item?.id ??
+                    `${item?.name}-${item?.city}-${item?.zip_code}`;
+                  const detailLine = [item?.city, item?.zip_code]
+                    .filter(Boolean)
+                    .join(" · ");
+                  return (
+                    <Button
+                      key={key}
+                      variant="subtle"
+                      color="gray"
+                      fullWidth
+                      justify="flex-start"
+                      onClick={() => handleSuggestionSelect(item)}
+                      radius="md"
+                      styles={() => ({
+                        root: {
+                          padding: "10px 12px",
+                          height: "auto",
+                          alignItems: "flex-start",
+                        },
+                        label: { width: "100%" },
+                      })}
+                    >
+                        <Stack gap={2} align="flex-start">
+                          <Text size="sm" fw={600} lh={1.4}>
+                            {item?.name || "--"}
+                          </Text>
+                          {detailLine && (
+                            <Text size="xs" c="dimmed" lh={1.2}>
+                              {detailLine}
+                            </Text>
+                          )}
+                        </Stack>
+                      </Button>
+                  );
+                })}
+              </Stack>
+            </ScrollArea.Autosize>
+          </Stack>
+        </Paper>
+      )}
+
+      {isEditing && showNoResultHint && (
+        <Text size="sm" c="dimmed">
+          未找到匹配的机构，可手动填写城市和邮编后保存。
+        </Text>
+      )}
+    </Stack>
+  );
+}
+
+InstitutionField.propTypes = {
+  form: PropTypes.object.isRequired,
+  index: PropTypes.number.isRequired,
+  isEditing: PropTypes.bool.isRequired,
+  requiredName: PropTypes.bool,
+  requiredCity: PropTypes.bool,
+  requiredZip: PropTypes.bool,
 };
 
 function ExpertFields({ form, isEditing }) {
@@ -507,13 +957,7 @@ function ExpertFields({ form, isEditing }) {
         <Button
           variant="light"
           leftSection={<IconPlus size={16} />}
-          onClick={() =>
-            form.insertListItem("institutions", {
-              name: "",
-              city: "",
-              zip_code: "",
-            })
-          }
+          onClick={() => form.insertListItem("institutions", createInstitutionEntry())}
           disabled={!isEditing}
         >
           添加单位
@@ -535,26 +979,14 @@ function ExpertFields({ form, isEditing }) {
                 </ActionIcon>
               )}
             </Group>
-            <SimpleGrid cols={{ base: 1, sm: 3 }}>
-              <TextInput
-                label="单位名称"
-                required
-                {...form.getInputProps(`institutions.${index}.name`)}
-                disabled={!isEditing}
-              />
-              <TextInput
-                label="城市"
-                required
-                {...form.getInputProps(`institutions.${index}.city`)}
-                disabled={!isEditing}
-              />
-              <TextInput
-                label="邮编"
-                required
-                {...form.getInputProps(`institutions.${index}.zip_code`)}
-                disabled={!isEditing}
-              />
-            </SimpleGrid>
+            <InstitutionField
+              form={form}
+              index={index}
+              isEditing={isEditing}
+              requiredName
+              requiredCity
+              requiredZip
+            />
           </Card>
         ))}
       </Stack>

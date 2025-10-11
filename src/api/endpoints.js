@@ -8,6 +8,15 @@ export const endpoints = {
     authors: '/api/users/authors',
     experts: '/api/users/experts'
   },
+  institutions: {
+    search: '/api/institutions/search',
+    create: '/api/institutions',
+    my: '/api/institutions/my',
+    linkAuthor: '/api/institutions/author/link',
+    unlinkAuthor: (id) => `/api/institutions/author/unlink/${id}`,
+    linkExpert: '/api/institutions/expert/link',
+    unlinkExpert: (id) => `/api/institutions/expert/unlink/${id}`
+  },
   papers: {
     base: '/api/papers',
     detail: (id) => `/api/papers/${id}`,
