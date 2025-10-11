@@ -24,9 +24,35 @@ import { notifications } from "@mantine/notifications";
 import PropTypes from "prop-types";
 
 const authorSchema = z.object({
-  name: z.string().min(1, "请输入姓名"),
+  name: z.string().trim().min(1, "请输入姓名"),
   age: z.coerce.number().min(18, "年龄需要大于18").max(120, "年龄过大"),
   email: z.string().email("请输入正确的邮箱"),
+  institutions: z
+    .array(
+      z.object({
+        name: z.string().optional(),
+        city: z.string().optional(),
+        zip_code: z.string().optional(),
+      })
+    )
+    .optional(),
+  degree: z.string().optional(),
+  title: z.string().optional(),
+  hometown: z.string().optional(),
+  research_areas: z.string().optional(),
+  bio: z.string().optional(),
+  phone: z
+    .string()
+    .optional()
+    .refine(
+      (value) => !value || value.trim().length >= 6,
+      "请输入正确的手机号"
+    ),
+});
+
+const expertSchema = z.object({
+  name: z.string().min(1, "请输入姓名"),
+  title: z.string().min(1, "请输入职称"),
   institutions: z
     .array(
       z.object({
@@ -36,18 +62,6 @@ const authorSchema = z.object({
       })
     )
     .min(1, "至少填写一个单位"),
-  degree: z.string().min(1, "请输入学位"),
-  title: z.string().min(1, "请输入职称"),
-  hometown: z.string().min(1, "请输入籍贯"),
-  research_areas: z.string().min(1, "请输入研究方向"),
-  bio: z.string().optional(),
-  phone: z.string().min(6, "请输入正确的手机号"),
-});
-
-const expertSchema = z.object({
-  name: z.string().min(1, "请输入姓名"),
-  title: z.string().min(1, "请输入职称"),
-  institution: z.string().min(1, "请输入单位"),
   email: z.string().email("请输入正确的邮箱"),
   phone: z.string().min(6, "请输入电话"),
   research_areas: z.string().min(1, "请输入研究方向"),
@@ -59,8 +73,14 @@ const expertSchema = z.object({
 const editorSchema = z.object({
   name: z.string().min(1, "请输入姓名"),
   email: z.string().email("请输入正确的邮箱"),
-  phone: z.string().min(6, "请输入联系电话"),
-  department: z.string().min(1, "请输入所属部门").optional(),
+  phone: z
+    .string()
+    .optional()
+    .refine(
+      (value) => !value || value.trim().length >= 6,
+      "请输入正确的联系电话"
+    ),
+  department: z.string().optional(),
   title: z.string().optional(),
 });
 
@@ -75,7 +95,6 @@ const defaultValues = {
   research_areas: "",
   bio: "",
   phone: "",
-  institution: "",
   bank_account: "",
   bank_name: "",
   account_holder: "",
@@ -149,13 +168,43 @@ export default function ProfilePage() {
         phone: phoneValue,
       };
     } else if (role === "expert") {
+      const normalizedInstitutions =
+        profile.institutions && profile.institutions.length > 0
+          ? profile.institutions
+          : profile.institution
+          ? Array.isArray(profile.institution)
+            ? profile.institution
+            : [
+                {
+                  name:
+                    typeof profile.institution === "object"
+                      ? profile.institution?.name
+                      : profile.institution || "",
+                  city:
+                    typeof profile.institution === "object"
+                      ? profile.institution?.city
+                      : profile.institution_city || "",
+                  zip_code:
+                    typeof profile.institution === "object"
+                      ? profile.institution?.zip_code
+                      : profile.institution_zip_code || "",
+                },
+              ]
+          : [];
       values = {
         name: profile.name || "",
         title: profile.title || "",
-        institution: profile.institution || "",
         email: profile.email || "",
         phone: phoneValue,
         research_areas: profile.research_areas || "",
+        institutions:
+          normalizedInstitutions.length > 0
+            ? normalizedInstitutions.map((item) => ({
+                name: item?.name || "",
+                city: item?.city || "",
+                zip_code: item?.zip_code || item?.postal_code || "",
+              }))
+            : [{ name: "", city: "", zip_code: "" }],
         bank_account: profile.bank_account || "",
         bank_name: profile.bank_name || "",
         account_holder: profile.account_holder || "",
@@ -181,6 +230,16 @@ export default function ProfilePage() {
         ...values,
         phone: values.phone?.trim?.() || "",
       };
+      if (
+        (role === "author" || role === "expert") &&
+        Array.isArray(values.institutions)
+      ) {
+        payload.institutions = values.institutions.map((item) => ({
+          name: item?.name?.trim?.() || "",
+          city: item?.city?.trim?.() || "",
+          zip_code: item?.zip_code?.trim?.() || "",
+        }));
+      }
       await api.put(endpoints.users.profile, payload);
       await refreshProfile();
       return payload;
@@ -264,7 +323,7 @@ export default function ProfilePage() {
 }
 
 function AuthorFields({ form, isEditing }) {
-  const institutions = form.values.institutions;
+  const institutions = form.values.institutions ?? [];
   return (
     <Stack gap="md">
       <Title order={4}>基础信息</Title>
@@ -291,31 +350,26 @@ function AuthorFields({ form, isEditing }) {
         />
         <TextInput
           label="手机"
-          required
           {...form.getInputProps("phone")}
           disabled={!isEditing}
         />
         <TextInput
           label="学位"
-          required
           {...form.getInputProps("degree")}
           disabled={!isEditing}
         />
         <TextInput
           label="职称"
-          required
           {...form.getInputProps("title")}
           disabled={!isEditing}
         />
         <TextInput
           label="籍贯"
-          required
           {...form.getInputProps("hometown")}
           disabled={!isEditing}
         />
         <TextInput
           label="研究方向"
-          required
           {...form.getInputProps("research_areas")}
           disabled={!isEditing}
         />
@@ -345,7 +399,128 @@ function AuthorFields({ form, isEditing }) {
         </Button>
       </Group>
       <Stack gap="sm">
-        {institutions.map((field, index) => (
+        {institutions.map((_, index) => (
+          <Card key={index} withBorder>
+            <Group justify="space-between" mb="sm">
+              <Text fw={500}>单位 {index + 1}</Text>
+              {institutions.length > 1 && (
+                <ActionIcon
+                  color="red"
+                  onClick={() => form.removeListItem("institutions", index)}
+                  aria-label="删除单位"
+                  disabled={!isEditing}
+                >
+                  <IconTrash size={16} />
+                </ActionIcon>
+              )}
+            </Group>
+            <SimpleGrid cols={{ base: 1, sm: 3 }}>
+              <TextInput
+                label="单位名称"
+                {...form.getInputProps(`institutions.${index}.name`)}
+                disabled={!isEditing}
+              />
+              <TextInput
+                label="城市"
+                {...form.getInputProps(`institutions.${index}.city`)}
+                disabled={!isEditing}
+              />
+              <TextInput
+                label="邮编"
+                {...form.getInputProps(`institutions.${index}.zip_code`)}
+                disabled={!isEditing}
+              />
+            </SimpleGrid>
+          </Card>
+        ))}
+      </Stack>
+    </Stack>
+  );
+}
+
+AuthorFields.propTypes = {
+  form: PropTypes.object.isRequired,
+  isEditing: PropTypes.bool.isRequired,
+};
+
+function ExpertFields({ form, isEditing }) {
+  const institutions = form.values.institutions ?? [];
+  return (
+    <Stack gap="md">
+      <Title order={4}>专家信息</Title>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <TextInput
+          label="姓名"
+          required
+          {...form.getInputProps("name")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="职称"
+          required
+          {...form.getInputProps("title")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="邮箱"
+          required
+          {...form.getInputProps("email")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="联系电话"
+          required
+          {...form.getInputProps("phone")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="研究方向"
+          required
+          {...form.getInputProps("research_areas")}
+          disabled={!isEditing}
+        />
+      </SimpleGrid>
+      <Title order={4}>收款信息</Title>
+      <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <TextInput
+          label="银行卡号"
+          required
+          {...form.getInputProps("bank_account")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="银行名称"
+          required
+          {...form.getInputProps("bank_name")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="开户名"
+          required
+          {...form.getInputProps("account_holder")}
+          disabled={!isEditing}
+        />
+      </SimpleGrid>
+
+      <Group justify="space-between">
+        <Title order={4}>工作单位</Title>
+        <Button
+          variant="light"
+          leftSection={<IconPlus size={16} />}
+          onClick={() =>
+            form.insertListItem("institutions", {
+              name: "",
+              city: "",
+              zip_code: "",
+            })
+          }
+          disabled={!isEditing}
+        >
+          添加单位
+        </Button>
+      </Group>
+      <Stack gap="sm">
+        {institutions.map((_, index) => (
           <Card key={index} withBorder>
             <Group justify="space-between" mb="sm">
               <Text fw={500}>单位 {index + 1}</Text>
@@ -387,79 +562,6 @@ function AuthorFields({ form, isEditing }) {
   );
 }
 
-AuthorFields.propTypes = {
-  form: PropTypes.object.isRequired,
-  isEditing: PropTypes.bool.isRequired,
-};
-
-function ExpertFields({ form, isEditing }) {
-  return (
-    <Stack gap="md">
-      <Title order={4}>专家信息</Title>
-      <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput
-          label="姓名"
-          required
-          {...form.getInputProps("name")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="职称"
-          required
-          {...form.getInputProps("title")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="单位"
-          required
-          {...form.getInputProps("institution")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="邮箱"
-          required
-          {...form.getInputProps("email")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="联系电话"
-          required
-          {...form.getInputProps("phone")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="研究方向"
-          required
-          {...form.getInputProps("research_areas")}
-          disabled={!isEditing}
-        />
-      </SimpleGrid>
-
-      <Title order={4}>收款信息</Title>
-      <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput
-          label="银行卡号"
-          required
-          {...form.getInputProps("bank_account")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="银行名称"
-          required
-          {...form.getInputProps("bank_name")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="开户名"
-          required
-          {...form.getInputProps("account_holder")}
-          disabled={!isEditing}
-        />
-      </SimpleGrid>
-    </Stack>
-  );
-}
-
 ExpertFields.propTypes = {
   form: PropTypes.object.isRequired,
   isEditing: PropTypes.bool.isRequired,
@@ -484,7 +586,6 @@ function EditorFields({ form, isEditing }) {
         />
         <TextInput
           label="联系电话"
-          required
           {...form.getInputProps("phone")}
           disabled={!isEditing}
         />
