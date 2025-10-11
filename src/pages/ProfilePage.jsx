@@ -10,84 +10,84 @@ import {
   Text,
   Textarea,
   TextInput,
-  Title
-} from '@mantine/core';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
-import { useForm, zodResolver } from '@mantine/form';
-import { z } from 'zod';
-import { useAuth } from '../features/auth/AuthProvider.jsx';
-import { useEffect, useMemo, useState } from 'react';
-import { useMutation, useQuery } from '@tanstack/react-query';
-import api from '../api/axios.js';
-import { endpoints } from '../api/endpoints.js';
-import { notifications } from '@mantine/notifications';
-import PropTypes from 'prop-types';
+  Title,
+} from "@mantine/core";
+import { IconPlus, IconTrash } from "@tabler/icons-react";
+import { useForm, zodResolver } from "@mantine/form";
+import { z } from "zod";
+import { useAuth } from "../features/auth/AuthProvider.jsx";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import api from "../api/axios.js";
+import { endpoints } from "../api/endpoints.js";
+import { notifications } from "@mantine/notifications";
+import PropTypes from "prop-types";
 
 const authorSchema = z.object({
-  name: z.string().min(1, '请输入姓名'),
-  age: z.coerce.number().min(18, '年龄需要大于18').max(120, '年龄过大'),
-  email: z.string().email('请输入正确的邮箱'),
+  name: z.string().min(1, "请输入姓名"),
+  age: z.coerce.number().min(18, "年龄需要大于18").max(120, "年龄过大"),
+  email: z.string().email("请输入正确的邮箱"),
   institutions: z
     .array(
       z.object({
-        name: z.string().min(1, '请输入单位名称'),
-        city: z.string().min(1, '请输入城市'),
-        postal_code: z.string().min(1, '请输入邮编')
+        name: z.string().min(1, "请输入单位名称"),
+        city: z.string().min(1, "请输入城市"),
+        zip_code: z.string().min(1, "请输入邮编"),
       })
     )
-    .min(1, '至少填写一个单位'),
-  degree: z.string().min(1, '请输入学位'),
-  title: z.string().min(1, '请输入职称'),
-  origin: z.string().min(1, '请输入籍贯'),
-  research_direction: z.string().min(1, '请输入研究方向'),
+    .min(1, "至少填写一个单位"),
+  degree: z.string().min(1, "请输入学位"),
+  title: z.string().min(1, "请输入职称"),
+  hometown: z.string().min(1, "请输入籍贯"),
+  research_areas: z.string().min(1, "请输入研究方向"),
   bio: z.string().optional(),
-  phone: z.string().min(6, '请输入正确的手机号')
+  phone: z.string().min(6, "请输入正确的手机号"),
 });
 
 const expertSchema = z.object({
-  name: z.string().min(1, '请输入姓名'),
-  title: z.string().min(1, '请输入职称'),
-  institution: z.string().min(1, '请输入单位'),
-  email: z.string().email('请输入正确的邮箱'),
-  phone: z.string().min(6, '请输入电话'),
-  research_direction: z.string().min(1, '请输入研究方向'),
-  bank_account: z.string().min(8, '请输入正确的银行卡号'),
-  bank_name: z.string().min(1, '请输入银行名称'),
-  account_holder: z.string().min(1, '请输入开户名')
+  name: z.string().min(1, "请输入姓名"),
+  title: z.string().min(1, "请输入职称"),
+  institution: z.string().min(1, "请输入单位"),
+  email: z.string().email("请输入正确的邮箱"),
+  phone: z.string().min(6, "请输入电话"),
+  research_areas: z.string().min(1, "请输入研究方向"),
+  bank_account: z.string().min(8, "请输入正确的银行卡号"),
+  bank_name: z.string().min(1, "请输入银行名称"),
+  account_holder: z.string().min(1, "请输入开户名"),
 });
 
 const editorSchema = z.object({
-  name: z.string().min(1, '请输入姓名'),
-  email: z.string().email('请输入正确的邮箱'),
-  phone: z.string().min(6, '请输入联系电话'),
-  department: z.string().min(1, '请输入所属部门').optional(),
-  title: z.string().optional()
+  name: z.string().min(1, "请输入姓名"),
+  email: z.string().email("请输入正确的邮箱"),
+  phone: z.string().min(6, "请输入联系电话"),
+  department: z.string().min(1, "请输入所属部门").optional(),
+  title: z.string().optional(),
 });
 
 const defaultValues = {
-  name: '',
+  name: "",
   age: 30,
-  email: '',
-  institutions: [{ name: '', city: '', postal_code: '' }],
-  degree: '',
-  title: '',
-  origin: '',
-  research_direction: '',
-  bio: '',
-  phone: '',
-  institution: '',
-  bank_account: '',
-  bank_name: '',
-  account_holder: '',
-  department: ''
+  email: "",
+  institutions: [{ name: "", city: "", zip_code: "" }],
+  degree: "",
+  title: "",
+  hometown: "",
+  research_areas: "",
+  bio: "",
+  phone: "",
+  institution: "",
+  bank_account: "",
+  bank_name: "",
+  account_holder: "",
+  department: "",
 };
 
 export default function ProfilePage() {
   const { role, refreshProfile } = useAuth();
 
   const schema = useMemo(() => {
-    if (role === 'author') return authorSchema;
-    if (role === 'expert') return expertSchema;
+    if (role === "author") return authorSchema;
+    if (role === "expert") return expertSchema;
     return editorSchema;
   }, [role]);
 
@@ -95,15 +95,15 @@ export default function ProfilePage() {
 
   const form = useForm({
     initialValues: defaultValues,
-    validate: zodResolver(schema)
+    validate: zodResolver(schema),
   });
 
   const { data, isLoading } = useQuery({
-    queryKey: ['profile'],
+    queryKey: ["profile"],
     queryFn: async () => {
       const response = await api.get(endpoints.users.profile);
       return response.data;
-    }
+    },
   });
 
   useEffect(() => {
@@ -121,52 +121,52 @@ export default function ProfilePage() {
       profile.phoneNumber ??
       profile.mobile ??
       profile.mobile_phone ??
-      ''
+      ""
     );
   }
 
   function applyProfileToForm(profile) {
     const phoneValue = extractPhone(profile);
     let values;
-    if (role === 'author') {
+    if (role === "author") {
       values = {
-        name: profile.name || '',
+        name: profile.name || "",
         age: profile.age || 30,
-        email: profile.email || '',
+        email: profile.email || "",
         institutions:
           profile.institutions?.length > 0
             ? profile.institutions.map((item) => ({
-                name: item.name || '',
-                city: item.city || '',
-                postal_code: item.postal_code || ''
+                name: item.name || "",
+                city: item.city || "",
+                zip_code: item.zip_code || "",
               }))
-            : [{ name: '', city: '', postal_code: '' }],
-        degree: profile.degree || '',
-        title: profile.title || '',
-        origin: profile.origin || '',
-        research_direction: profile.research_direction || '',
-        bio: profile.bio || '',
-        phone: phoneValue
-      };
-    } else if (role === 'expert') {
-      values = {
-        name: profile.name || '',
-        title: profile.title || '',
-        institution: profile.institution || '',
-        email: profile.email || '',
+            : [{ name: "", city: "", zip_code: "" }],
+        degree: profile.degree || "",
+        title: profile.title || "",
+        hometown: profile.hometown || "",
+        research_areas: profile.research_areas || "",
+        bio: profile.bio || "",
         phone: phoneValue,
-        research_direction: profile.research_direction || '',
-        bank_account: profile.bank_account || '',
-        bank_name: profile.bank_name || '',
-        account_holder: profile.account_holder || ''
+      };
+    } else if (role === "expert") {
+      values = {
+        name: profile.name || "",
+        title: profile.title || "",
+        institution: profile.institution || "",
+        email: profile.email || "",
+        phone: phoneValue,
+        research_areas: profile.research_areas || "",
+        bank_account: profile.bank_account || "",
+        bank_name: profile.bank_name || "",
+        account_holder: profile.account_holder || "",
       };
     } else {
       values = {
-        name: profile.name || '',
-        email: profile.email || '',
+        name: profile.name || "",
+        email: profile.email || "",
         phone: phoneValue,
-        department: profile.department || '',
-        title: profile.title || ''
+        department: profile.department || "",
+        title: profile.title || "",
       };
     }
     const nextValues = values ?? defaultValues;
@@ -179,7 +179,7 @@ export default function ProfilePage() {
     mutationFn: async (values) => {
       const payload = {
         ...values,
-        phone: values.phone?.trim?.() || ''
+        phone: values.phone?.trim?.() || "",
       };
       await api.put(endpoints.users.profile, payload);
       await refreshProfile();
@@ -187,9 +187,9 @@ export default function ProfilePage() {
     },
     onSuccess: (payload) => {
       notifications.show({
-        title: '保存成功',
-        message: '个人信息已更新',
-        color: 'green'
+        title: "保存成功",
+        message: "个人信息已更新",
+        color: "green",
       });
       applyProfileToForm(payload);
       setIsEditing(false);
@@ -199,19 +199,28 @@ export default function ProfilePage() {
       if (fieldErrors) {
         form.setErrors(fieldErrors);
       }
-    }
+    },
   });
 
   return (
     <Stack>
       <Title order={2}>个人信息</Title>
       <Card shadow="sm" radius="md" withBorder pos="relative">
-        <LoadingOverlay visible={isLoading || mutation.isPending} overlayProps={{ blur: 2 }} />
+        <LoadingOverlay
+          visible={isLoading || mutation.isPending}
+          overlayProps={{ blur: 2 }}
+        />
         <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
           <Stack gap="xl">
-            {role === 'author' && <AuthorFields form={form} isEditing={isEditing} />}
-            {role === 'expert' && <ExpertFields form={form} isEditing={isEditing} />}
-            {role === 'editor' && <EditorFields form={form} isEditing={isEditing} />}
+            {role === "author" && (
+              <AuthorFields form={form} isEditing={isEditing} />
+            )}
+            {role === "expert" && (
+              <ExpertFields form={form} isEditing={isEditing} />
+            )}
+            {role === "editor" && (
+              <EditorFields form={form} isEditing={isEditing} />
+            )}
             <Group justify="flex-end">
               {isEditing ? (
                 <>
@@ -260,31 +269,61 @@ function AuthorFields({ form, isEditing }) {
     <Stack gap="md">
       <Title order={4}>基础信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
+        <TextInput
+          label="姓名"
+          required
+          {...form.getInputProps("name")}
+          disabled={!isEditing}
+        />
         <NumberInput
           label="年龄"
           required
           min={18}
           max={120}
-          {...form.getInputProps('age')}
+          {...form.getInputProps("age")}
           disabled={!isEditing}
         />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
-        <TextInput label="手机" required {...form.getInputProps('phone')} disabled={!isEditing} />
-        <TextInput label="学位" required {...form.getInputProps('degree')} disabled={!isEditing} />
-        <TextInput label="职称" required {...form.getInputProps('title')} disabled={!isEditing} />
-        <TextInput label="籍贯" required {...form.getInputProps('origin')} disabled={!isEditing} />
+        <TextInput
+          label="邮箱"
+          required
+          {...form.getInputProps("email")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="手机"
+          required
+          {...form.getInputProps("phone")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="学位"
+          required
+          {...form.getInputProps("degree")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="职称"
+          required
+          {...form.getInputProps("title")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="籍贯"
+          required
+          {...form.getInputProps("hometown")}
+          disabled={!isEditing}
+        />
         <TextInput
           label="研究方向"
           required
-          {...form.getInputProps('research_direction')}
+          {...form.getInputProps("research_areas")}
           disabled={!isEditing}
         />
       </SimpleGrid>
       <Textarea
         label="个人简介"
         minRows={3}
-        {...form.getInputProps('bio')}
+        {...form.getInputProps("bio")}
         disabled={!isEditing}
       />
 
@@ -294,7 +333,11 @@ function AuthorFields({ form, isEditing }) {
           variant="light"
           leftSection={<IconPlus size={16} />}
           onClick={() =>
-            form.insertListItem('institutions', { name: '', city: '', postal_code: '' })
+            form.insertListItem("institutions", {
+              name: "",
+              city: "",
+              zip_code: "",
+            })
           }
           disabled={!isEditing}
         >
@@ -309,7 +352,7 @@ function AuthorFields({ form, isEditing }) {
               {institutions.length > 1 && (
                 <ActionIcon
                   color="red"
-                  onClick={() => form.removeListItem('institutions', index)}
+                  onClick={() => form.removeListItem("institutions", index)}
                   aria-label="删除单位"
                   disabled={!isEditing}
                 >
@@ -333,7 +376,7 @@ function AuthorFields({ form, isEditing }) {
               <TextInput
                 label="邮编"
                 required
-                {...form.getInputProps(`institutions.${index}.postal_code`)}
+                {...form.getInputProps(`institutions.${index}.zip_code`)}
                 disabled={!isEditing}
               />
             </SimpleGrid>
@@ -346,7 +389,7 @@ function AuthorFields({ form, isEditing }) {
 
 AuthorFields.propTypes = {
   form: PropTypes.object.isRequired,
-  isEditing: PropTypes.bool.isRequired
+  isEditing: PropTypes.bool.isRequired,
 };
 
 function ExpertFields({ form, isEditing }) {
@@ -354,25 +397,40 @@ function ExpertFields({ form, isEditing }) {
     <Stack gap="md">
       <Title order={4}>专家信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
-        <TextInput label="职称" required {...form.getInputProps('title')} disabled={!isEditing} />
+        <TextInput
+          label="姓名"
+          required
+          {...form.getInputProps("name")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="职称"
+          required
+          {...form.getInputProps("title")}
+          disabled={!isEditing}
+        />
         <TextInput
           label="单位"
           required
-          {...form.getInputProps('institution')}
+          {...form.getInputProps("institution")}
           disabled={!isEditing}
         />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
+        <TextInput
+          label="邮箱"
+          required
+          {...form.getInputProps("email")}
+          disabled={!isEditing}
+        />
         <TextInput
           label="联系电话"
           required
-          {...form.getInputProps('phone')}
+          {...form.getInputProps("phone")}
           disabled={!isEditing}
         />
         <TextInput
           label="研究方向"
           required
-          {...form.getInputProps('research_direction')}
+          {...form.getInputProps("research_areas")}
           disabled={!isEditing}
         />
       </SimpleGrid>
@@ -382,19 +440,19 @@ function ExpertFields({ form, isEditing }) {
         <TextInput
           label="银行卡号"
           required
-          {...form.getInputProps('bank_account')}
+          {...form.getInputProps("bank_account")}
           disabled={!isEditing}
         />
         <TextInput
           label="银行名称"
           required
-          {...form.getInputProps('bank_name')}
+          {...form.getInputProps("bank_name")}
           disabled={!isEditing}
         />
         <TextInput
           label="开户名"
           required
-          {...form.getInputProps('account_holder')}
+          {...form.getInputProps("account_holder")}
           disabled={!isEditing}
         />
       </SimpleGrid>
@@ -404,7 +462,7 @@ function ExpertFields({ form, isEditing }) {
 
 ExpertFields.propTypes = {
   form: PropTypes.object.isRequired,
-  isEditing: PropTypes.bool.isRequired
+  isEditing: PropTypes.bool.isRequired,
 };
 
 function EditorFields({ form, isEditing }) {
@@ -412,18 +470,32 @@ function EditorFields({ form, isEditing }) {
     <Stack gap="md">
       <Title order={4}>编辑信息</Title>
       <SimpleGrid cols={{ base: 1, sm: 2 }}>
-        <TextInput label="姓名" required {...form.getInputProps('name')} disabled={!isEditing} />
-        <TextInput label="邮箱" required {...form.getInputProps('email')} disabled={!isEditing} />
+        <TextInput
+          label="姓名"
+          required
+          {...form.getInputProps("name")}
+          disabled={!isEditing}
+        />
+        <TextInput
+          label="邮箱"
+          required
+          {...form.getInputProps("email")}
+          disabled={!isEditing}
+        />
         <TextInput
           label="联系电话"
           required
-          {...form.getInputProps('phone')}
+          {...form.getInputProps("phone")}
           disabled={!isEditing}
         />
-        <TextInput label="职称" {...form.getInputProps('title')} disabled={!isEditing} />
+        <TextInput
+          label="职称"
+          {...form.getInputProps("title")}
+          disabled={!isEditing}
+        />
         <TextInput
           label="所属部门"
-          {...form.getInputProps('department')}
+          {...form.getInputProps("department")}
           disabled={!isEditing}
         />
       </SimpleGrid>
@@ -433,5 +505,5 @@ function EditorFields({ form, isEditing }) {
 
 EditorFields.propTypes = {
   form: PropTypes.object.isRequired,
-  isEditing: PropTypes.bool.isRequired
+  isEditing: PropTypes.bool.isRequired,
 };
