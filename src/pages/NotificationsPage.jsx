@@ -1,16 +1,17 @@
 import {
+  ActionIcon,
   Badge,
-  Button,
   Card,
   Group,
   LoadingOverlay,
-  Pagination,
+  Modal,
   Select,
   Stack,
   Text,
   Title
 } from '@mantine/core';
-import { useState } from 'react';
+import { IconEye } from '@tabler/icons-react';
+import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../api/axios.js';
 import { endpoints } from '../api/endpoints.js';
@@ -25,28 +26,29 @@ const readOptions = [
 const typeOptions = [
   { label: '全部类型', value: 'all' },
   { label: '审稿通知', value: 'Review Assignment' },
-  { label: '录用通知', value: 'Acceptance' },
-  { label: '退修通知', value: 'Major Revision' },
   { label: '支付确认', value: 'Payment Confirmation' },
-  { label: '拒稿通知', value: 'Rejection' }
+  { label: '录用通知', value: 'Acceptance Notification' },
+  { label: '拒稿通知', value: 'Rejection Notification' }
 ];
 
+const typeLabels = {
+  'Review Assignment': '审稿通知',
+  'Payment Confirmation': '支付确认',
+  'Acceptance Notification': '录用通知',
+  'Rejection Notification': '拒稿通知'
+};
+
 export default function NotificationsPage() {
-  const [page, setPage] = useState(1);
   const [type, setType] = useState('all');
   const [readFilter, setReadFilter] = useState('all');
+  const [selectedNotification, setSelectedNotification] = useState(null);
+  const [detailOpened, setDetailOpened] = useState(false);
   const queryClient = useQueryClient();
 
   const { data, isLoading, isFetching } = useQuery({
-    queryKey: ['notifications', page, type, readFilter],
+    queryKey: ['notifications'],
     queryFn: async () => {
-      const params = {
-        page,
-        pageSize: 10
-      };
-      if (type !== 'all') params.type = type;
-      if (readFilter !== 'all') params.read = readFilter === 'read';
-      const response = await api.get(endpoints.notifications.author, { params });
+      const response = await api.get(endpoints.notifications.author);
       return response.data;
     },
     keepPreviousData: true
@@ -56,14 +58,44 @@ export default function NotificationsPage() {
     mutationFn: async (id) => {
       await api.put(endpoints.notifications.markRead(id));
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['notifications'] });
+    onSuccess: (_, id) => {
+      queryClient.setQueryData(['notifications'], (prev) => {
+        if (!prev) return prev;
+        return prev.map((notification) =>
+          notification.notification_id === id
+            ? { ...notification, is_read: true }
+            : notification
+        );
+      });
+      setSelectedNotification((current) =>
+        current?.notification_id === id ? { ...current, is_read: true } : current
+      );
       queryClient.invalidateQueries({ queryKey: ['notifications', 'unread-count'] });
     }
   });
 
-  const notifications = data?.items || data || [];
-  const totalPages = data?.totalPages || 1;
+  const notifications = data || [];
+  const filteredNotifications = useMemo(() => {
+    return notifications.filter((item) => {
+      if (type !== 'all' && item.notification_type !== type) return false;
+      if (readFilter === 'read' && !item.is_read) return false;
+      if (readFilter === 'unread' && item.is_read) return false;
+      return true;
+    });
+  }, [notifications, type, readFilter]);
+
+  const closeDetail = () => {
+    setDetailOpened(false);
+    setSelectedNotification(null);
+  };
+
+  const handleViewDetail = (notification) => {
+    setSelectedNotification({ ...notification, is_read: true });
+    setDetailOpened(true);
+    if (!notification.is_read) {
+      markReadMutation.mutate(notification.notification_id);
+    }
+  };
 
   return (
     <Stack>
@@ -77,7 +109,6 @@ export default function NotificationsPage() {
               value={type}
               onChange={(value) => {
                 setType(value || 'all');
-                setPage(1);
               }}
               aria-label="通知类型筛选"
             />
@@ -86,55 +117,95 @@ export default function NotificationsPage() {
               value={readFilter}
               onChange={(value) => {
                 setReadFilter(value || 'all');
-                setPage(1);
               }}
               aria-label="通知是否已读筛选"
             />
           </Group>
         </Group>
         <Stack gap="sm">
-          {notifications.length === 0 && (
+          {filteredNotifications.length === 0 && (
             <Card shadow="xs" withBorder>
               <Text>暂无通知，去提交论文或等待系统通知。</Text>
             </Card>
           )}
-          {notifications.map((item) => (
-            <Card key={item.id} withBorder shadow="xs">
+          {filteredNotifications.map((item) => (
+            <Card key={item.notification_id} withBorder shadow="xs">
               <Group justify="space-between" mb="xs">
                 <Group gap="xs">
-                  <Title order={4}>{item.title || item.type}</Title>
-                  <Badge color={item.read ? 'gray' : 'blue'}>
-                    {item.read ? '已读' : '未读'}
+                  <Title order={4}>{typeLabels[item.notification_type] || item.notification_type}</Title>
+                  <Badge color={item.is_read ? 'gray' : 'blue'}>
+                    {item.is_read ? '已读' : '未读'}
                   </Badge>
                   {item.deadline && (
                     <Badge color="red" variant="light">
-                      截止：{dayjs(item.deadline).format('YYYY-MM-DD')}
+                      截止：{dayjs(item.deadline).format('YYYY-MM-DD HH:mm')}
                     </Badge>
                   )}
                 </Group>
-                <Text size="sm" c="dimmed">
-                  {dayjs(item.created_at || item.createdAt).format('YYYY-MM-DD HH:mm')}
-                </Text>
+                <Group gap="xs">
+                  <Text size="sm" c="dimmed">
+                    发送时间：{dayjs(item.sent_at).format('YYYY-MM-DD HH:mm')}
+                  </Text>
+                  <ActionIcon
+                    variant="light"
+                    onClick={() => handleViewDetail(item)}
+                    aria-label="查看通知详情"
+                  >
+                    <IconEye size={18} />
+                  </ActionIcon>
+                </Group>
               </Group>
-              <Text mb="sm" size="sm">
-                {item.content || item.message}
-              </Text>
-              {!item.read && (
-                <Button
-                  size="xs"
-                  variant="light"
-                  onClick={() => markReadMutation.mutate(item.id)}
-                >
-                  标记已读
-                </Button>
-              )}
             </Card>
           ))}
         </Stack>
-        <Group justify="center" mt="lg">
-          <Pagination value={page} onChange={setPage} total={totalPages} />
-        </Group>
       </Card>
+      <Modal opened={detailOpened} onClose={closeDetail} title="通知详情" size="md">
+        {selectedNotification ? (
+          <Stack gap="sm">
+            <Text>
+              <Text span fw={500}>
+                通知类型：
+              </Text>
+              {typeLabels[selectedNotification.notification_type] ||
+                selectedNotification.notification_type}
+            </Text>
+            <Text>
+              <Text span fw={500}>
+                发送时间：
+              </Text>
+              {dayjs(selectedNotification.sent_at).format('YYYY-MM-DD HH:mm')}
+            </Text>
+            {selectedNotification.deadline && (
+              <Text>
+                <Text span fw={500}>
+                  截止时间：
+                </Text>
+                {dayjs(selectedNotification.deadline).format('YYYY-MM-DD HH:mm')}
+              </Text>
+            )}
+            {selectedNotification.paper_id && (
+              <Text>
+                <Text span fw={500}>
+                  关联论文ID：
+                </Text>
+                {selectedNotification.paper_id}
+              </Text>
+            )}
+            {selectedNotification.content || selectedNotification.message ? (
+              <Text>
+                <Text span fw={500}>
+                  内容：
+                </Text>
+                {selectedNotification.content || selectedNotification.message}
+              </Text>
+            ) : (
+              <Text c="dimmed">暂无详细内容</Text>
+            )}
+          </Stack>
+        ) : (
+          <Text c="dimmed">请选择一条通知查看详情。</Text>
+        )}
+      </Modal>
     </Stack>
   );
 }
