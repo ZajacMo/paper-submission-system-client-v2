@@ -20,6 +20,23 @@ import api from '../../api/axios.js';
 import { endpoints } from '../../api/endpoints.js';
 import { notifications } from '@mantine/notifications';
 
+const statusLabelMap = {
+  Assigned: '待审中',
+  Pending: '待审中',
+  Overdue: '已逾期',
+  Completed: '已完成'
+};
+
+const statusColorMap = {
+  Assigned: 'orange',
+  Pending: 'orange',
+  Overdue: 'red',
+  Completed: 'green'
+};
+
+const formatDate = (value, format = 'YYYY-MM-DD HH:mm') =>
+  value ? dayjs(value).format(format) : '—';
+
 const schema = z.object({
   conclusion: z.enum(['Accept', 'Minor Revision', 'Major Revision', 'Reject'], {
     required_error: '请选择结论'
@@ -43,13 +60,18 @@ export default function ExpertReviewDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
 
-  const { data, isLoading } = useQuery({
-    queryKey: ['review', assignmentId],
+  const { data: assignments, isLoading, isFetching } = useQuery({
+    queryKey: ['reviews', 'assignments'],
     queryFn: async () => {
-      const response = await api.get(endpoints.reviews.assignment(assignmentId));
-      return response.data;
-    }
+      const response = await api.get(endpoints.reviews.assignments);
+      return response.data ?? [];
+    },
+    placeholderData: () => queryClient.getQueryData(['reviews', 'assignments']) || []
   });
+
+  const assignment = (assignments || []).find(
+    (item) => String(item.assignment_id) === String(assignmentId)
+  );
 
   const form = useForm({
     initialValues: {
@@ -62,15 +84,15 @@ export default function ExpertReviewDetailPage() {
   });
 
   useEffect(() => {
-    if (data?.conclusion) {
+    if (assignment) {
       form.setValues({
-        conclusion: data.conclusion,
-        positive_comments: data.positive_comments || '',
-        negative_comments: data.negative_comments || '',
-        modification_advice: data.modification_advice || ''
+        conclusion: assignment.conclusion || 'Accept',
+        positive_comments: assignment.positive_comments || '',
+        negative_comments: assignment.negative_comments || '',
+        modification_advice: assignment.modification_advice || ''
       });
     }
-  }, [data, form]);
+  }, [assignment, form]);
 
   const mutation = useMutation({
     mutationFn: async (values) => {
@@ -107,35 +129,82 @@ export default function ExpertReviewDetailPage() {
       </Group>
 
       <Card withBorder shadow="sm" radius="md">
-        <LoadingOverlay visible={isLoading} overlayProps={{ blur: 2 }} />
-        <Stack gap="sm">
-          <Group gap="xs">
-            <Badge color="blue">论文ID：{data?.paper_id}</Badge>
-            <Badge color="orange">状态：{data?.status || 'Pending'}</Badge>
-          </Group>
-          <Text fw={600}>标题</Text>
-          <Text>{data?.paper_title || '—'}</Text>
-          <Text fw={600}>截止日期</Text>
-          <Text>
-            {data?.due_date ? dayjs(data.due_date).format('YYYY-MM-DD HH:mm') : '—'}
-          </Text>
-          <Text fw={600}>稿件附件</Text>
-          {data?.attachment_url ? (
-            <Button component="a" href={data.attachment_url} target="_blank">
-              下载稿件
-            </Button>
-          ) : (
-            <Text>暂无附件</Text>
-          )}
-        </Stack>
+        <LoadingOverlay visible={isLoading || isFetching} overlayProps={{ blur: 2 }} />
+        {!assignment && !(isLoading || isFetching) ? (
+          <Text>未找到对应的审稿任务。</Text>
+        ) : (
+          <Stack gap="sm">
+            <Group gap="xs" wrap="wrap">
+              {assignment?.paper_id && <Badge color="blue">论文ID：{assignment.paper_id}</Badge>}
+              <Badge color={statusColorMap[assignment?.status] || 'orange'}>
+                状态：{statusLabelMap[assignment?.status] || '待审中'}
+              </Badge>
+              {assignment?.conclusion && (
+                <Badge color="green">结论：{assignment.conclusion}</Badge>
+              )}
+            </Group>
+            <Stack gap={4}>
+              <Text fw={600}>中文标题</Text>
+              <Text>{assignment?.title_zh || '—'}</Text>
+            </Stack>
+            <Stack gap={4}>
+              <Text fw={600}>英文标题</Text>
+              <Text>{assignment?.title_en || '—'}</Text>
+            </Stack>
+            <Group gap="xl" align="flex-start" wrap="wrap">
+              <Stack gap={4} w={180}>
+                <Text c="dimmed">指派时间</Text>
+                <Text>{formatDate(assignment?.assigned_date)}</Text>
+              </Stack>
+              <Stack gap={4} w={180}>
+                <Text c="dimmed">截止时间</Text>
+                <Text>{formatDate(assignment?.assigned_due_date)}</Text>
+              </Stack>
+              <Stack gap={4} w={200}>
+                <Text c="dimmed">提交时间</Text>
+                <Text>{formatDate(assignment?.submission_date)}</Text>
+              </Stack>
+            </Group>
+            <Group gap="xl" align="flex-start" wrap="wrap">
+              <Stack gap={4} w={160}>
+                <Text c="dimmed">专家ID</Text>
+                <Text>{assignment?.expert_id ?? '—'}</Text>
+              </Stack>
+              <Stack gap={4} w={160}>
+                <Text c="dimmed">编辑ID</Text>
+                <Text>{assignment?.editor_id ?? '—'}</Text>
+              </Stack>
+            </Group>
+            <Text fw={600}>稿件附件</Text>
+            {assignment?.attachment_url ? (
+              <Button component="a" href={assignment.attachment_url} target="_blank">
+                下载稿件
+              </Button>
+            ) : (
+              <Text>暂无附件</Text>
+            )}
+          </Stack>
+        )}
       </Card>
 
       <Card withBorder shadow="sm" radius="md">
         <Title order={4} mb="md">
           提交审稿意见
         </Title>
+        {!assignment && !(isLoading || isFetching) && (
+          <Text c="red" mb="sm">
+            当前未找到对应任务，暂无法提交审稿意见。
+          </Text>
+        )}
         <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
-          <Stack gap="md">
+          <Stack
+            gap="md"
+            style={
+              !assignment
+                ? { pointerEvents: 'none', opacity: 0.5 }
+                : undefined
+            }
+          >
             <Radio.Group
               label="审稿结论"
               required
@@ -167,7 +236,7 @@ export default function ExpertReviewDetailPage() {
               {...form.getInputProps('modification_advice')}
             />
             <Group justify="flex-end">
-              <Button type="submit" loading={mutation.isPending}>
+              <Button type="submit" loading={mutation.isPending} disabled={!assignment}>
                 提交意见
               </Button>
             </Group>

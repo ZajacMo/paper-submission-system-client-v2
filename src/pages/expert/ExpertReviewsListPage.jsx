@@ -21,10 +21,27 @@ import { useNavigate } from 'react-router-dom';
 
 const statusOptions = [
   { label: '全部', value: 'all' },
-  { label: '待处理', value: 'Pending' },
-  { label: '已提交', value: 'Submitted' },
-  { label: '逾期', value: 'Overdue' }
+  { label: '待审中', value: 'Assigned' },
+  { label: '逾期', value: 'Overdue' },
+  { label: '已完成', value: 'Completed' }
 ];
+
+const statusLabelMap = {
+  Assigned: '待审中',
+  Overdue: '已逾期',
+  Completed: '已完成',
+  Pending: '待审中'
+};
+
+const statusColorMap = {
+  Assigned: 'orange',
+  Pending: 'orange',
+  Overdue: 'red',
+  Completed: 'green'
+};
+
+const formatDate = (value, format = 'YYYY-MM-DD') =>
+  value ? dayjs(value).format(format) : '—';
 
 export default function ExpertReviewsListPage() {
   const [status, setStatus] = useState('all');
@@ -48,13 +65,14 @@ export default function ExpertReviewsListPage() {
         <Table.Tr key={assignment.assignment_id}>
           <Table.Td>{assignment.assignment_id}</Table.Td>
           <Table.Td>{assignment.paper_id}</Table.Td>
-          <Table.Td>{assignment.paper_title || assignment.title}</Table.Td>
+          <Table.Td>{assignment.title_zh || assignment.title_en || '—'}</Table.Td>
+          <Table.Td>{formatDate(assignment.assigned_date)}</Table.Td>
+          <Table.Td>{formatDate(assignment.assigned_due_date)}</Table.Td>
+          <Table.Td>{formatDate(assignment.submission_date, 'YYYY-MM-DD HH:mm')}</Table.Td>
+          <Table.Td>{assignment.conclusion || '—'}</Table.Td>
           <Table.Td>
-            {assignment.due_date ? dayjs(assignment.due_date).format('YYYY-MM-DD') : '—'}
-          </Table.Td>
-          <Table.Td>
-            <Badge color={assignment.status === 'Submitted' ? 'green' : 'orange'}>
-              {assignment.status || 'Pending'}
+            <Badge color={statusColorMap[assignment.status] || 'gray'}>
+              {statusLabelMap[assignment.status] || assignment.status || '待审中'}
             </Badge>
           </Table.Td>
           <Table.Td>
@@ -90,19 +108,24 @@ export default function ExpertReviewsListPage() {
             aria-label="按标题筛选"
           />
         </Group>
-        <Table striped highlightOnHover withBorder>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>任务ID</Table.Th>
-              <Table.Th>论文ID</Table.Th>
-              <Table.Th>标题</Table.Th>
-              <Table.Th>截止日期</Table.Th>
-              <Table.Th>状态</Table.Th>
-              <Table.Th>操作</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>{rows}</Table.Tbody>
-        </Table>
+        <Table.ScrollContainer minWidth={960}>
+          <Table striped highlightOnHover withBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th style={{ width: 90 }}>任务ID</Table.Th>
+                <Table.Th style={{ width: 90 }}>论文ID</Table.Th>
+                <Table.Th style={{ minWidth: 240 }}>论文标题</Table.Th>
+                <Table.Th style={{ width: 140 }}>指派日期</Table.Th>
+                <Table.Th style={{ width: 140 }}>截止日期</Table.Th>
+                <Table.Th style={{ width: 180 }}>提交时间</Table.Th>
+                <Table.Th style={{ width: 120 }}>审稿结论</Table.Th>
+                <Table.Th style={{ width: 120 }}>状态</Table.Th>
+                <Table.Th style={{ width: 80 }}>操作</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>{rows}</Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
         {data?.length === 0 && <Text mt="md">暂无任务。</Text>}
       </Card>
     </Stack>

@@ -14,6 +14,25 @@ import { endpoints } from '../../api/endpoints.js';
 import dayjs from 'dayjs';
 import PropTypes from 'prop-types';
 
+const statusLabelMap = {
+  Assigned: '待审中',
+  Pending: '待审中',
+  Overdue: '已逾期',
+  Completed: '已完成'
+};
+
+const statusColorMap = {
+  Assigned: 'orange',
+  Pending: 'orange',
+  Overdue: 'red',
+  Completed: 'green'
+};
+
+const formatDate = (value, format = 'YYYY-MM-DD') =>
+  value ? dayjs(value).format(format) : '—';
+
+const isPendingStatus = (status) => ['assigned', 'pending', 'overdue'].includes((status || '').toLowerCase());
+
 export default function ExpertDashboardPage() {
   const { data: assignments, isLoading } = useQuery({
     queryKey: ['reviews', 'assignments'],
@@ -23,9 +42,7 @@ export default function ExpertDashboardPage() {
     }
   });
 
-  const pendingAssignments = (assignments || []).filter(
-    (item) => item.status === 'Pending' || item.status === 'assigned'
-  );
+  const pendingAssignments = (assignments || []).filter((item) => isPendingStatus(item.status));
 
   const acceptedCount = (assignments || []).filter((item) => item.conclusion === 'Accept').length;
 
@@ -63,12 +80,17 @@ export default function ExpertDashboardPage() {
             <Card key={assignment.assignment_id} withBorder>
               <Group justify="space-between">
                 <div>
-                  <Text fw={600}>{assignment.paper_title || assignment.title}</Text>
+                  <Text fw={600}>{assignment.title_zh || assignment.title_en || '—'}</Text>
                   <Text size="sm" c="dimmed">
-                    截止时间：{assignment.due_date ? dayjs(assignment.due_date).format('YYYY-MM-DD') : '—'}
+                    指派时间：{formatDate(assignment.assigned_date)}
+                  </Text>
+                  <Text size="sm" c="dimmed">
+                    截止时间：{formatDate(assignment.assigned_due_date)}
                   </Text>
                 </div>
-                <Badge color="orange">待处理</Badge>
+                <Badge color={statusColorMap[assignment.status] || 'orange'}>
+                  {statusLabelMap[assignment.status] || '待审中'}
+                </Badge>
               </Group>
             </Card>
           ))}
