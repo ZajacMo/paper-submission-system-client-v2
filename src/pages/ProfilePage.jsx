@@ -76,17 +76,8 @@ const expertSchema = z.object({
 });
 
 const editorSchema = z.object({
-  name: z.string().min(1, "请输入姓名"),
+  name: z.string().trim().min(1, "请输入姓名"),
   email: z.string().email("请输入正确的邮箱"),
-  phone: z
-    .string()
-    .optional()
-    .refine(
-      (value) => !value || value.trim().length >= 6,
-      "请输入正确的联系电话"
-    ),
-  department: z.string().optional(),
-  title: z.string().optional(),
 });
 
 const createTempId = () =>
@@ -240,9 +231,6 @@ export default function ProfilePage() {
       values = {
         name: profile.name || "",
         email: profile.email || "",
-        phone: phoneValue,
-        department: profile.department || "",
-        title: profile.title || "",
       };
     }
     const nextValues = values ?? defaultValues;
@@ -420,10 +408,16 @@ export default function ProfilePage() {
 
   const mutation = useMutation({
     mutationFn: async (values) => {
-      const payload = {
-        ...values,
-        phone: trimString(values.phone),
-      };
+      const payload =
+        role === "editor"
+          ? {
+              name: values.name,
+              email: values.email,
+            }
+          : {
+              ...values,
+              phone: trimString(values.phone),
+            };
 
       let normalizedInstitutions = [];
       const shouldSyncInstitutions =
@@ -1002,21 +996,6 @@ function EditorFields({ form, isEditing }) {
           label="邮箱"
           required
           {...form.getInputProps("email")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="联系电话"
-          {...form.getInputProps("phone")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="职称"
-          {...form.getInputProps("title")}
-          disabled={!isEditing}
-        />
-        <TextInput
-          label="所属部门"
-          {...form.getInputProps("department")}
           disabled={!isEditing}
         />
       </SimpleGrid>
