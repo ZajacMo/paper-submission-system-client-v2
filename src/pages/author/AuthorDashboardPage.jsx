@@ -151,11 +151,12 @@ export default function AuthorDashboardPage() {
         <Title order={4} mb="md">
           流程示意
         </Title>
-        <Timeline active={2} bulletSize={24} lineWidth={2}>
+        <Timeline active={3} bulletSize={24} lineWidth={2}>
           <Timeline.Item title="收稿" />
           <Timeline.Item title="初审" />
-          <Timeline.Item title="外审" />
-          <Timeline.Item title="修改/复审" />
+          <Timeline.Item title="评审" />
+          <Timeline.Item title="修改" />
+          <Timeline.Item title="复审" />
           <Timeline.Item title="录用" />
           <Timeline.Item title="支付版面费" />
           <Timeline.Item title="排期出版" />

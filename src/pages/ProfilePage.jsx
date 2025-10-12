@@ -39,11 +39,7 @@ const authorSchema = z.object({
   name: z.string().trim().min(1, "请输入姓名"),
   age: z.coerce.number().min(18, "年龄需要大于18").max(120, "年龄过大"),
   email: z.string().email("请输入正确的邮箱"),
-  institutions: z
-    .array(
-      authorInstitutionSchema
-    )
-    .optional(),
+  institutions: z.array(authorInstitutionSchema).optional(),
   degree: z.string().optional(),
   title: z.string().optional(),
   hometown: z.string().optional(),
@@ -70,11 +66,7 @@ const expertInstitutionSchema = z.object({
 const expertSchema = z.object({
   name: z.string().min(1, "请输入姓名"),
   title: z.string().min(1, "请输入职称"),
-  institutions: z
-    .array(
-      expertInstitutionSchema
-    )
-    .min(1, "至少填写一个单位"),
+  institutions: z.array(expertInstitutionSchema).min(1, "至少填写一个单位"),
   email: z.string().email("请输入正确的邮箱"),
   phone: z.string().min(6, "请输入电话"),
   research_areas: z.string().min(1, "请输入研究方向"),
@@ -360,8 +352,7 @@ export default function ProfilePage() {
         endpoints.institutions.create,
         createPayload
       );
-      const createdId =
-        response.data?.institution_id ?? response.data?.id;
+      const createdId = response.data?.institution_id ?? response.data?.id;
       if (!createdId) {
         throw new Error("创建机构失败");
       }
@@ -613,7 +604,9 @@ function AuthorFields({ form, isEditing }) {
         <Button
           variant="light"
           leftSection={<IconPlus size={16} />}
-          onClick={() => form.insertListItem("institutions", createInstitutionEntry())}
+          onClick={() =>
+            form.insertListItem("institutions", createInstitutionEntry())
+          }
           disabled={!isEditing}
         >
           添加单位
@@ -635,11 +628,7 @@ function AuthorFields({ form, isEditing }) {
                 </ActionIcon>
               )}
             </Group>
-            <InstitutionField
-              form={form}
-              index={index}
-              isEditing={isEditing}
-            />
+            <InstitutionField form={form} index={index} isEditing={isEditing} />
           </Card>
         ))}
       </Stack>
@@ -696,10 +685,7 @@ function InstitutionField({
       return;
     }
 
-    if (
-      value.institution_id &&
-      trimmedName === (value.name || "").trim()
-    ) {
+    if (value.institution_id && trimmedName === (value.name || "").trim()) {
       setSuggestions([]);
       return;
     }
@@ -790,7 +776,7 @@ function InstitutionField({
     suggestions.length === 0;
 
   return (
-    <Stack gap={6}>
+    <Stack gap={5}>
       <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
         <TextInput
           label="单位名称"
@@ -856,17 +842,17 @@ function InstitutionField({
                         label: { width: "100%" },
                       })}
                     >
-                        <Stack gap={2} align="flex-start">
-                          <Text size="sm" fw={600} lh={1.4}>
-                            {item?.name || "--"}
+                      <Stack gap={2} align="flex-start">
+                        <Text size="sm" fw={600} lh={1.4}>
+                          {item?.name || "--"}
+                        </Text>
+                        {detailLine && (
+                          <Text size="xs" c="dimmed" lh={1.2}>
+                            {detailLine}
                           </Text>
-                          {detailLine && (
-                            <Text size="xs" c="dimmed" lh={1.2}>
-                              {detailLine}
-                            </Text>
-                          )}
-                        </Stack>
-                      </Button>
+                        )}
+                      </Stack>
+                    </Button>
                   );
                 })}
               </Stack>
@@ -957,7 +943,9 @@ function ExpertFields({ form, isEditing }) {
         <Button
           variant="light"
           leftSection={<IconPlus size={16} />}
-          onClick={() => form.insertListItem("institutions", createInstitutionEntry())}
+          onClick={() =>
+            form.insertListItem("institutions", createInstitutionEntry())
+          }
           disabled={!isEditing}
         >
           添加单位
