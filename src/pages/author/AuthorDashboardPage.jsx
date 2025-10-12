@@ -19,8 +19,14 @@ import api from "../../api/axios.js";
 import { endpoints } from "../../api/endpoints.js";
 import dayjs from "dayjs";
 import PropTypes from "prop-types";
+import { useMemo } from "react";
+import {
+  deriveLastUpdatedAt,
+  mapProgressToStages,
+} from "../../utils/paperProgress.js";
 
 const statusColors = {
+  draft: "gray",
   submitted: "blue",
   reviewing: "orange",
   revision: "yellow",
@@ -28,12 +34,31 @@ const statusColors = {
   rejected: "red",
 };
 
+function normalizeDateInput(value) {
+  if (!value || typeof value !== "string") {
+    return value;
+  }
+  return value.includes("T") ? value : value.replace(" ", "T");
+}
+
 export default function AuthorDashboardPage() {
   // 拉取作者可见的论文列表。接口已经做权限控制，这里不额外过滤。
   const { data: papers, isLoading } = useQuery({
     queryKey: ["papers", "author"],
     queryFn: async () => {
       const response = await api.get(endpoints.papers.base);
+      return response.data ?? [];
+    },
+  });
+
+  const {
+    data: progressList,
+    isLoading: isProgressLoading,
+    error: progressError,
+  } = useQuery({
+    queryKey: ["papers", "progress", "author"],
+    queryFn: async () => {
+      const response = await api.get(endpoints.papers.progressList);
       return response.data ?? [];
     },
   });
@@ -67,15 +92,92 @@ export default function AuthorDashboardPage() {
     { total: 0, byStatus: {} }
   );
 
-  // “最近进度”按照更新时间排序，前端不做分页，最多展示 5 条。
-  const recentPapers = [...(papers || [])]
-    .sort(
-      (a, b) =>
-        new Date(b.updated_at || b.submission_date) -
-        new Date(a.updated_at || a.submission_date)
-    )
-    .slice(0, 5);
+  const paperIndex = useMemo(() => {
+    const index = new Map();
+    (papers || []).forEach((paper) => {
+      const id = paper.paper_id ?? paper.id;
+      if (id !== undefined && id !== null) {
+        index.set(String(id), paper);
+      }
+    });
+    return index;
+  }, [papers]);
 
+  const recentProgressItems = useMemo(() => {
+    if (progressList && progressList.length > 0) {
+      return progressList
+        .map((progress) => {
+          const paperId = progress.paper_id ?? progress.id;
+          const paperMeta =
+            paperId !== undefined && paperId !== null
+              ? paperIndex.get(String(paperId))
+              : undefined;
+          const stages = mapProgressToStages(progress);
+          const activeStage =
+            stages.find((stage) => stage.status !== "finished") ||
+            stages[stages.length - 1];
+          const lastUpdated =
+            deriveLastUpdatedAt(progress) ||
+            (progress.submission_time
+              ? new Date(normalizeDateInput(progress.submission_time))
+              : undefined) ||
+            (paperMeta?.updated_at
+              ? new Date(normalizeDateInput(paperMeta.updated_at))
+              : undefined) ||
+            (paperMeta?.submission_date
+              ? new Date(normalizeDateInput(paperMeta.submission_date))
+              : undefined);
+          return {
+            paperId,
+            title:
+              progress.title_zh ||
+              progress.title_en ||
+              paperMeta?.title_zh ||
+              paperMeta?.title_en ||
+              "未命名稿件",
+            status: paperMeta?.status,
+            submissionDate:
+              progress.submission_time ||
+              paperMeta?.submission_date ||
+              paperMeta?.submission_time,
+            currentStage: activeStage?.label,
+            currentStageStatus: activeStage?.statusText,
+            currentStageColor: activeStage?.color || "blue",
+            lastUpdated,
+          };
+        })
+        .sort(
+          (a, b) =>
+            (b.lastUpdated ? b.lastUpdated.getTime() : 0) -
+            (a.lastUpdated ? a.lastUpdated.getTime() : 0)
+        )
+        .slice(0, 5);
+    }
+
+    return [...(papers || [])]
+      .sort(
+        (a, b) =>
+          new Date(b.updated_at || b.submission_date) -
+          new Date(a.updated_at || a.submission_date)
+      )
+      .slice(0, 5)
+      .map((paper) => ({
+        paperId: paper.id || paper.paper_id,
+        title: paper.title_zh || paper.title_en,
+        status: paper.status,
+        submissionDate: paper.submission_date,
+        currentStage: paper.current_stage,
+        currentStageStatus: paper.current_stage ? "处理中" : undefined,
+        currentStageColor: paper.current_stage ? "blue" : "gray",
+        lastUpdated: paper.updated_at
+          ? new Date(normalizeDateInput(paper.updated_at))
+          : paper.submission_date
+          ? new Date(normalizeDateInput(paper.submission_date))
+          : undefined,
+      }));
+  }, [papers, progressList, paperIndex]);
+
+  // “最近进度”按照更新时间排序，前端不做分页，最多展示 5 条。
   return (
     <Stack gap="xl">
       <Title order={2}>仪表盘</Title>
@@ -96,22 +198,52 @@ export default function AuthorDashboardPage() {
           <Title order={4} mb="md">
             最近进度
           </Title>
-          {recentPapers.length === 0 && <Text>暂无论文，请提交新稿件。</Text>}
+          {isProgressLoading && (
+            <Group justify="center" py="md">
+              <Loader size="sm" />
+            </Group>
+          )}
+          {progressError && (
+            <Text size="sm" c="red" mb="sm">
+              进度信息暂时无法加载，以下数据来自最近的稿件更新。
+            </Text>
+          )}
+          {recentProgressItems.length === 0 && !isProgressLoading && (
+            <Text>暂无论文，请提交新稿件。</Text>
+          )}
           <Stack gap="sm">
-            {recentPapers.map((paper) => (
-              <Card key={paper.id} withBorder radius="md">
+            {recentProgressItems.map((item) => (
+              <Card key={item.paperId} withBorder radius="md">
                 <Group justify="space-between" mb="xs">
-                  <Text fw={600}>{paper.title_zh || paper.title_en}</Text>
-                  <Badge color={statusColors[paper.status] || "gray"}>
-                    {paper.status || "草稿"}
-                  </Badge>
+                  <Text fw={600}>{item.title}</Text>
+                  {item.status && (
+                    <Badge color={statusColors[item.status] || "gray"}>
+                      {item.status}
+                    </Badge>
+                  )}
                 </Group>
-                <Text size="sm" c="dimmed">
-                  提交时间：{dayjs(paper.submission_date).format("YYYY-MM-DD")}
-                </Text>
-                {paper.current_stage && (
-                  <Text size="sm">当前阶段：{paper.current_stage}</Text>
+                {item.currentStage && (
+                  <Group gap="xs" mb="xs">
+                    <Badge variant="light" color={item.currentStageColor}>
+                      {item.currentStageStatus}
+                    </Badge>
+                    <Text size="sm">当前阶段：{item.currentStage}</Text>
+                  </Group>
                 )}
+                <Text size="sm" c="dimmed">
+                  提交时间：
+                  {item.submissionDate
+                    ? dayjs(normalizeDateInput(item.submissionDate)).format(
+                        "YYYY-MM-DD"
+                      )
+                    : "—"}
+                </Text>
+                <Text size="sm" c="dimmed">
+                  最近更新：
+                  {item.lastUpdated
+                    ? dayjs(item.lastUpdated).format("YYYY-MM-DD HH:mm")
+                    : "待更新"}
+                </Text>
               </Card>
             ))}
           </Stack>

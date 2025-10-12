@@ -25,6 +25,7 @@ import { useQuery } from '@tanstack/react-query';
 import dayjs from 'dayjs';
 import api from '../../api/axios.js';
 import { endpoints } from '../../api/endpoints.js';
+import { deriveCurrentStage, mapProgressToStages } from '../../utils/paperProgress.js';
 
 const statusOptions = [
   { label: '全部状态', value: 'all' },
@@ -61,15 +62,52 @@ export default function AuthorPapersListPage() {
     }
   });
 
+  const {
+    data: progressList,
+    isLoading: isProgressLoading,
+    error: progressError
+  } = useQuery({
+    queryKey: ['papers', 'progress', 'author'],
+    queryFn: async () => {
+      const response = await api.get(endpoints.papers.progressList);
+      return response.data ?? [];
+    }
+  });
+
+  const progressIndex = useMemo(() => {
+    const map = new Map();
+    (progressList || []).forEach((progress) => {
+      const paperId = progress.paper_id ?? progress.id;
+      if (paperId === undefined || paperId === null) {
+        return;
+      }
+      const stages = mapProgressToStages(progress);
+      const activeStage =
+        stages.find((stage) => stage.status !== 'finished') || stages[stages.length - 1];
+      map.set(String(paperId), {
+        currentStage: deriveCurrentStage(progress),
+        currentStageStatus: activeStage?.statusText,
+        currentStageColor: activeStage?.color || 'blue'
+      });
+    });
+    return map;
+  }, [progressList]);
+
   /**
    * 将接口数据映射成表格行：保持纯函数式，以便 React 在查询更新时最小化 diff。
    * 处理 paper_id/id 混用，以兼容旧数据。
    */
-  const rows = useMemo(
-    () =>
-      (data || []).map((paper) => (
-        <Table.Tr key={paper.id || paper.paper_id}>
-          <Table.Td>{paper.paper_id || paper.id}</Table.Td>
+  const rows = useMemo(() => {
+    return (data || []).map((paper) => {
+      const paperId = paper.paper_id || paper.id;
+      const progress = paperId !== undefined ? progressIndex.get(String(paperId)) : undefined;
+      const stageLabel = progress?.currentStage || paper.current_stage || '待更新';
+      const stageStatus = progress?.currentStageStatus;
+      const stageColor = progress?.currentStageColor || 'gray';
+
+      return (
+        <Table.Tr key={paperId}>
+          <Table.Td>{paperId}</Table.Td>
           <Table.Td>
             <Stack gap={4}>
               <Text fw={600}>{paper.title_zh}</Text>
@@ -88,27 +126,34 @@ export default function AuthorPapersListPage() {
             </Stack>
           </Table.Td>
           <Table.Td>
-            {paper.submission_date
-              ? dayjs(paper.submission_date).format('YYYY-MM-DD')
-              : '—'}
+            {paper.submission_date ? dayjs(paper.submission_date).format('YYYY-MM-DD') : '—'}
           </Table.Td>
           <Table.Td>
             <Badge>{paper.status || '未知'}</Badge>
           </Table.Td>
-          <Table.Td>{paper.current_stage || '待更新'}</Table.Td>
+          <Table.Td>
+            <Stack gap={4}>
+              <Text size="sm">{stageLabel}</Text>
+              {stageStatus && (
+                <Badge size="sm" variant="light" color={stageColor}>
+                  {stageStatus}
+                </Badge>
+              )}
+            </Stack>
+          </Table.Td>
           <Table.Td>
             <ActionIcon
               variant="light"
-              onClick={() => navigate(`/author/papers/${paper.paper_id || paper.id}`)}
+              onClick={() => navigate(`/author/papers/${paperId}`)}
               aria-label="查看详情"
             >
               <IconEye size={18} />
             </ActionIcon>
           </Table.Td>
         </Table.Tr>
-      )),
-    [data, navigate]
-  );
+      );
+    });
+  }, [data, navigate, progressIndex]);
 
   return (
     <Stack gap="xl">
@@ -117,7 +162,10 @@ export default function AuthorPapersListPage() {
         <Button onClick={() => navigate('/author/papers/new')}>提交新论文</Button>
       </Group>
       <Card withBorder shadow="sm" radius="md" pos="relative">
-        <LoadingOverlay visible={isLoading || isFetching} overlayProps={{ blur: 2 }} />
+        <LoadingOverlay
+          visible={isLoading || isFetching || isProgressLoading}
+          overlayProps={{ blur: 2 }}
+        />
         <Group mb="md" wrap="wrap" gap="md">
           <Select
             data={statusOptions}
@@ -152,6 +200,11 @@ export default function AuthorPapersListPage() {
           </Table.Thead>
           <Table.Tbody>{rows}</Table.Tbody>
         </Table>
+        {progressError && (
+          <Text size="sm" c="red" mt="sm">
+            无法获取最新进度，列表中显示的阶段基于已有数据。
+          </Text>
+        )}
         {data?.length === 0 && <Text mt="md">暂无数据，去提交论文。</Text>}
       </Card>
     </Stack>

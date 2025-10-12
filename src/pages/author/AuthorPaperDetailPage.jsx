@@ -22,8 +22,9 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import api from '../../api/axios.js';
 import { endpoints } from '../../api/endpoints.js';
 import dayjs from 'dayjs';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
+import { mapProgressToStages } from '../../utils/paperProgress.js';
 
 export default function AuthorPaperDetailPage() {
   const { paperId } = useParams();
@@ -39,6 +40,19 @@ export default function AuthorPaperDetailPage() {
       const response = await api.get(endpoints.papers.detail(paperId));
       return response.data;
     }
+  });
+
+  const {
+    data: progress,
+    isLoading: isProgressLoading,
+    error: progressError
+  } = useQuery({
+    queryKey: ['paper-progress', paperId],
+    queryFn: async () => {
+      const response = await api.get(endpoints.papers.progress(paperId));
+      return response.data;
+    },
+    enabled: Boolean(paperId)
   });
 
   /**
@@ -79,20 +93,17 @@ export default function AuthorPaperDetailPage() {
     }
   });
 
-  /**
-   * 后端若尚未提供完整时间线，前端给出默认流程，确保界面始终有反馈。
-   * 一旦接口返回 timeline 字段，将直接使用真实数据。
-   */
-  const stages = paper?.timeline || [
-    { id: 1, name: '收稿', status: 'done', date: paper?.submission_date },
-    { id: 2, name: '初审', status: 'pending' },
-    { id: 3, name: '评审', status: 'pending' },
-    { id: 4, name: '修改', status: 'pending' },
-    { id: 5, name: '复审', status: 'pending' },
-    { id: 6, name: '录用', status: 'pending' },
-    { id: 7, name: '支付版面费', status: 'pending' },
-    { id: 8, name: '排期', status: 'pending' }
-  ];
+  const submissionDate = paper?.submission_date;
+
+  const timelineStages = useMemo(() => {
+    const mapped = mapProgressToStages(progress);
+    if (submissionDate) {
+      return mapped.map((stage) =>
+        stage.key === 'submission' && !stage.time ? { ...stage, time: submissionDate } : stage
+      );
+    }
+    return mapped;
+  }, [progress, submissionDate]);
 
   // 仅在待修状态下展示上传区，与业务约定保持一致。
   const canSubmitRevision = ['revision', 'major_revision'].includes(paper?.status);
@@ -165,28 +176,38 @@ export default function AuthorPaperDetailPage() {
         </Stack>
       </Card>
 
-      <Card withBorder shadow="sm" radius="md">
+      <Card withBorder shadow="sm" radius="md" pos="relative">
+        <LoadingOverlay visible={isLoading || isProgressLoading} overlayProps={{ blur: 2 }} />
         <Title order={4} mb="md">
           进度时间线
         </Title>
-        <Timeline bulletSize={24} lineWidth={2}>
-          {stages.map((stage) => (
-            <Timeline.Item
-              key={stage.id || stage.name}
-              title={stage.name}
-              bullet={stage.status === 'done' ? '✓' : undefined}
-            >
-              <Text size="sm">
-                {stage.date ? dayjs(stage.date).format('YYYY-MM-DD') : '待更新'}
-              </Text>
-              {stage.comment && (
-                <Text size="sm" c="dimmed">
-                  {stage.comment}
-                </Text>
-              )}
-            </Timeline.Item>
-          ))}
-        </Timeline>
+        {progressError ? (
+          <Text c="red" size="sm">
+            无法加载最新进度，请稍后重试。
+          </Text>
+        ) : (
+          <Timeline bulletSize={24} lineWidth={2}>
+            {timelineStages.map((stage) => (
+              <Timeline.Item
+                key={stage.key}
+                title={stage.label}
+                bullet={stage.status === 'finished' ? '✓' : undefined}
+                color={stage.color}
+              >
+                <Text size="sm">状态：{stage.statusText}</Text>
+                {stage.status === 'finished' && stage.time ? (
+                  <Text size="sm" c="dimmed">
+                    完成时间：{dayjs(stage.time).format('YYYY-MM-DD HH:mm')}
+                  </Text>
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    等待完成
+                  </Text>
+                )}
+              </Timeline.Item>
+            ))}
+          </Timeline>
+        )}
       </Card>
 
       {canSubmitRevision && (
