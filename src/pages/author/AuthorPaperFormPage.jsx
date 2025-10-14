@@ -36,6 +36,7 @@ import {
   sanitizeKeywords,
   ACCEPTED_FILE_TYPES
 } from '../../features/papers/paperSchema.js';
+import AuthorInstitutionInput from '../../components/AuthorInstitutionInput.jsx';
 
 const initialValues = {
   title_zh: '',
@@ -46,7 +47,7 @@ const initialValues = {
   keywords_en: [],
   fund_name: '',
   fund_code: '',
-  authors: [{ author_id: '', institution_id: '' }],
+  authors: [{ author_id: null, institution_id: null }],
   attachment: null
 };
 
@@ -94,9 +95,9 @@ export default function AuthorPaperFormPage({ mode }) {
         fund_code: paper.fund_code || '',
         authors:
           paper.authors?.map((author) => ({
-            author_id: String(author.author_id),
-            institution_id: String(author.institution_id)
-          })) || [{ author_id: '', institution_id: '' }],
+            author_id: author.author_id,
+            institution_id: author.institution_id
+          })) || [{ author_id: null, institution_id: null }],
         attachment: null
       });
       setExistingFile(paper.attachment_url || null);
@@ -104,24 +105,22 @@ export default function AuthorPaperFormPage({ mode }) {
   });
 
   /**
-   * 非编辑态时默认把当前登录作者写入 authors 列表。由于作者可能有多个单位，这里仅选取第一个，
-   * 后续允许在 UI 中再调整。
+   * 非编辑态时默认把当前登录作者写入 authors 列表。
+   * 新的组件会自动处理第一作者的锁定逻辑。
    */
   useEffect(() => {
-    if (!isEdit && profile && userId) {
+    if (!isEdit && userId) {
       form.setValues((prev) => ({
         ...prev,
         authors: [
           {
-            author_id: String(userId),
-            institution_id: profile.institutions?.[0]?.id
-              ? String(profile.institutions[0].id)
-              : ''
+            author_id: null, // 让组件自动处理第一作者锁定
+            institution_id: null
           }
         ]
       }));
     }
-  }, [isEdit, profile, userId, form]);
+  }, [isEdit, userId, form]);
 
   /**
    * 作者和单位的下拉数据：后端没有专门接口，这里复用用户 profile 中的缓存字段。
@@ -288,7 +287,7 @@ export default function AuthorPaperFormPage({ mode }) {
                   leftSection={<IconPlus size={16} />}
                   variant="light"
                   onClick={() =>
-                    form.insertListItem('authors', { author_id: '', institution_id: '' })
+                    form.insertListItem('authors', { author_id: null, institution_id: null })
                   }
                 >
                   添加作者
@@ -296,44 +295,20 @@ export default function AuthorPaperFormPage({ mode }) {
               </Group>
 
               {form.values.authors.map((item, index) => (
-                <Card withBorder key={index}>
-                  <Group justify="space-between" mb="sm">
-                    <Text fw={600}>作者 {index + 1}</Text>
-                    {form.values.authors.length > 1 && (
-                      <ActionIcon
-                        color="red"
-                        onClick={() => form.removeListItem('authors', index)}
-                        aria-label="删除作者"
-                      >
-                        <IconTrash size={16} />
-                      </ActionIcon>
-                    )}
-                  </Group>
-                  <SimpleGrid cols={{ base: 1, md: 2 }}>
-                    <Select
-                      label="作者"
-                      placeholder="请选择作者"
-                      data={authorOptions}
-                      searchable
-                      value={item.author_id ? String(item.author_id) : ''}
-                      onChange={(value) =>
-                        form.setFieldValue(`authors.${index}.author_id`, value || '')
-                      }
-                      error={form.errors[`authors.${index}.author_id`]}
-                    />
-                    <Select
-                      label="所属单位"
-                      placeholder="请选择单位"
-                      data={institutionOptions}
-                      searchable
-                      value={item.institution_id ? String(item.institution_id) : ''}
-                      onChange={(value) =>
-                        form.setFieldValue(`authors.${index}.institution_id`, value || '')
-                      }
-                      error={form.errors[`authors.${index}.institution_id`]}
-                    />
-                  </SimpleGrid>
-                </Card>
+                <AuthorInstitutionInput
+                  key={index}
+                  value={item}
+                  onChange={(newValue) => form.setFieldValue(`authors.${index}`, newValue)}
+                  onRemove={() => form.removeListItem('authors', index)}
+                  index={index}
+                  currentUserId={userId}
+                  isFirstAuthor={index === 0}
+                  canRemove={form.values.authors.length > 1}
+                  errors={{
+                    author_id: form.errors[`authors.${index}.author_id`],
+                    institution_id: form.errors[`authors.${index}.institution_id`]
+                  }}
+                />
               ))}
             </Stack>
 

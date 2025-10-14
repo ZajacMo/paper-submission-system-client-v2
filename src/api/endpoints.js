@@ -6,7 +6,8 @@ export const endpoints = {
   users: {
     profile: '/api/users/profile',
     authors: '/api/users/authors',
-    experts: '/api/users/experts'
+    experts: '/api/users/experts',
+    search: '/api/users/search'
   },
   institutions: {
     search: '/api/institutions/search',
