@@ -30,6 +30,15 @@ import {
   normalizeReviewStatus,
 } from "../../utils/reviewStatus.js";
 
+const notificationTypeLabels = {
+  "Review Assignment": "审稿通知",
+  "Payment Confirmation": "支付确认",
+  "Acceptance Notification": "录用通知",
+  "Rejection Notification": "拒稿通知",
+  "Major Revision": "大修通知",
+  "Minor Revision": "小修通知",
+};
+
 function normalizeDateInput(value) {
   if (!value || typeof value !== "string") {
     return value;
@@ -249,26 +258,49 @@ export default function AuthorDashboardPage() {
           </Title>
           {notifications?.length === 0 && <Text>暂无通知。</Text>}
           <Stack gap="sm">
-            {notifications?.map((notification) => (
-              <Card key={notification.id} withBorder>
-                <Group justify="space-between" mb="xs">
-                  <Text fw={600}>
-                    {notification.title || notification.type}
+            {notifications?.map((notification, index) => {
+              const id =
+                notification.id ??
+                notification.notification_id ??
+                `notification-${index}`;
+              const isRead =
+                notification.read ??
+                notification.is_read ??
+                notification.isRead ??
+                false;
+              const typeLabel =
+                notificationTypeLabels[notification.notification_type] ||
+                notification.notification_type ||
+                notification.type;
+              const timestamp =
+                notification.created_at ||
+                notification.createdAt ||
+                notification.sent_at;
+              const displayTime = timestamp
+                ? "发送时间: " + dayjs(timestamp).format("YYYY-MM-DD HH:mm")
+                : "发送时间未知";
+
+              return (
+                <Card key={id} withBorder>
+                  <Group justify="space-between" mb="xs">
+                    <Text fw={600}>
+                      {notification.title || typeLabel || "系统通知"}
+                    </Text>
+                    <Badge color={isRead ? "gray" : "blue"}>
+                      {isRead ? "已读" : "未读"}
+                    </Badge>
+                  </Group>
+                  <Text size="sm" c="dimmed">
+                    {displayTime}
                   </Text>
-                  <Badge color={notification.read ? "gray" : "blue"}>
-                    {notification.read ? "已读" : "未读"}
-                  </Badge>
-                </Group>
-                <Text size="sm" c="dimmed">
-                  {dayjs(
-                    notification.created_at || notification.createdAt
-                  ).format("YYYY-MM-DD HH:mm")}
-                </Text>
-                <Text size="sm">
-                  {notification.content || notification.message}
-                </Text>
-              </Card>
-            ))}
+                  <Text size="sm">
+                    {notification.content ||
+                      notification.message ||
+                      "暂无详细内容"}
+                  </Text>
+                </Card>
+              );
+            })}
           </Stack>
         </Card>
       </SimpleGrid>
