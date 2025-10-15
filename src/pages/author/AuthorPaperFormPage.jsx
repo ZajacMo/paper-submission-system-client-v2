@@ -37,6 +37,7 @@ import {
   ACCEPTED_FILE_TYPES
 } from '../../features/papers/paperSchema.js';
 import AuthorInstitutionInput from '../../components/AuthorInstitutionInput.jsx';
+import KeywordTagsInput from '../../components/KeywordTagsInput.jsx';
 
 const initialValues = {
   title_zh: '',
@@ -210,16 +211,48 @@ export default function AuthorPaperFormPage({ mode }) {
     }
   });
 
-  const handleSubmit = (values) => {
+  // 在总提交前，确保数据库中存在所有关键词；若不存在则创建
+  const ensureKeywordsExist = async (zhList, enList) => {
+    const ensureByType = async (names, type) => {
+      const searchEndpoint = type === 'en' ? endpoints.keywords.searchEn : endpoints.keywords.searchZh;
+      for (const rawName of names) {
+        const name = (rawName || '').trim();
+        if (!name) continue;
+        try {
+          const resp = await api.get(searchEndpoint, { params: { query: name } });
+          const existed = (Array.isArray(resp.data) ? resp.data : []).some(
+            (item) => (item.keyword_name || '').trim() === name
+          );
+          if (!existed) {
+            await api.post(endpoints.keywords.create, {
+              keyword_name: name,
+              keyword_type: type,
+            });
+          }
+        } catch (e) {
+          // 交由 axios 拦截器提示；不中断整体验证与提交
+        }
+      }
+    };
+
+    await Promise.all([ensureByType(zhList, 'zh'), ensureByType(enList, 'en')]);
+  };
+
+  const handleSubmit = async (values) => {
     if (!isEdit && !values.attachment) {
       form.setFieldError('attachment', '请上传稿件附件');
       return;
     }
-    // 关键词去重与去空格，确保后台能接收规范数据。
+    // 关键词去重与去空格
+    const zh = sanitizeKeywords(values.keywords_zh);
+    const en = sanitizeKeywords(values.keywords_en);
+    // 确保数据库存在新关键词（仅在提交时创建）
+    await ensureKeywordsExist(zh, en);
+    // 提交论文
     mutation.mutate({
       ...values,
-      keywords_zh: sanitizeKeywords(values.keywords_zh),
-      keywords_en: sanitizeKeywords(values.keywords_en)
+      keywords_zh: zh,
+      keywords_en: en
     });
   };
 
@@ -262,16 +295,22 @@ export default function AuthorPaperFormPage({ mode }) {
                 />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, md: 2 }}>
-                <TagsInput
+                <KeywordTagsInput
                   label="中文关键词"
-                  description="1-8 个关键词，回车分隔"
+                  description="1-8 个关键词，支持输入联想"
                   required
-                  {...form.getInputProps('keywords_zh')}
+                  type="zh"
+                  value={form.values.keywords_zh}
+                  onChange={(vals) => form.setFieldValue('keywords_zh', vals)}
+                  error={form.errors.keywords_zh}
                 />
-                <TagsInput
+                <KeywordTagsInput
                   label="英文关键词"
-                  description="可选，回车分隔"
-                  {...form.getInputProps('keywords_en')}
+                  description="可选，支持输入联想"
+                  type="en"
+                  value={form.values.keywords_en}
+                  onChange={(vals) => form.setFieldValue('keywords_en', vals)}
+                  error={form.errors.keywords_en}
                 />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, md: 2 }}>

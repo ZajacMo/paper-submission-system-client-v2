@@ -18,6 +18,11 @@ export const endpoints = {
     linkExpert: '/api/institutions/expert/link',
     unlinkExpert: (id) => `/api/institutions/expert/unlink/${id}`
   },
+  keywords: {
+    searchZh: '/api/keywords/search/zh',
+    searchEn: '/api/keywords/search/en',
+    create: '/api/keywords'
+  },
   papers: {
     base: '/api/papers',
     detail: (id) => `/api/papers/${id}`,
