@@ -159,31 +159,90 @@ export default function AuthorPaperFormPage({ mode }) {
   }, [profile]);
 
   /**
-   * 提交/更新论文：通过 FormData 上传文件，其他字段使用 JSON 序列化。
+   * 提交/更新论文：
+   * - 新建：先上传附件（/api/papers/upload-attachment），取返回的 path 作为 attachment_path，再以 JSON 提交 /api/papers
+   * - 编辑：沿用原有逻辑（保持最小改动），仍支持附件变更
    * 上传进度通过 Axios onUploadProgress 收集，以便前端展示。
    */
   const mutation = useMutation({
     mutationFn: async (values) => {
-      const endpoint = isEdit
-        ? endpoints.papers.detail(paperId)
-        : endpoints.papers.base;
-      const method = isEdit ? api.put : api.post;
+      if (!isEdit) {
+        // 第一步：上传附件，仅发送文件
+        const fd = new FormData();
+        if (values.attachment instanceof File) {
+          fd.append('attachment', values.attachment);
+        }
+        const uploadResp = await api.post(endpoints.papers.uploadAttachment, fd, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total) {
+              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              setUploadProgress(percent);
+            }
+          }
+        });
 
+        const attachmentPath = uploadResp?.data?.file?.path;
+        if (!attachmentPath) {
+          throw new Error('附件上传失败：未返回路径');
+        }
+
+        // 映射 authors / institutions / is_corresponding
+        const authors = (values.authors || [])
+          .map((a) => (a?.author_id != null ? String(a.author_id) : null))
+          .filter(Boolean);
+        const institutions = (values.authors || [])
+          .map((a) => (a?.institution_id != null ? a.institution_id : null))
+          .filter((id) => id !== null);
+        const isCorresponding = authors.map((_, idx) => idx === 0);
+
+        const body = {
+          title_zh: values.title_zh,
+          title_en: values.title_en || '',
+          abstract_zh: values.abstract_zh,
+          abstract_en: values.abstract_en || '',
+          keywords_zh: values.keywords_zh || [],
+          keywords_en: values.keywords_en || [],
+          keywords_new: values.keywords_new || [],
+          attachment_path: attachmentPath,
+          authors,
+          institutions,
+          is_corresponding: isCorresponding
+        };
+
+        // 资金：精确匹配时用 funds；否则用 funds_new（两者只能有一个）
+        const fundName = (values.fund_name || '').trim();
+        const fundCode = (values.fund_code || '').trim();
+        if (fundName) {
+          // 始终在 funds 中包含基金名称
+          body.funds = [fundName];
+          // 当非精确匹配（数据库不存在）时，同时提供 funds_new
+          if (!fundCodeLocked) {
+            body.funds_new = [{ name: fundName, number: fundCode || fundName }];
+          }
+        }
+
+        const response = await api.post(endpoints.papers.base, body);
+        return response.data;
+      }
+
+      // 编辑模式：保留原有 multipart/form-data 以减少对现有后端约定的影响
+      const endpoint = endpoints.papers.detail(paperId);
       const formData = new FormData();
       formData.append('title_zh', values.title_zh);
       if (values.title_en) formData.append('title_en', values.title_en);
       formData.append('abstract_zh', values.abstract_zh);
       if (values.abstract_en) formData.append('abstract_en', values.abstract_en);
-      formData.append('keywords_zh', JSON.stringify(values.keywords_zh));
-      formData.append('keywords_en', JSON.stringify(values.keywords_en));
+      formData.append('keywords_zh', JSON.stringify(values.keywords_zh || []));
+      formData.append('keywords_en', JSON.stringify(values.keywords_en || []));
       if (values.fund_name) formData.append('fund_name', values.fund_name);
       if (values.fund_code) formData.append('fund_code', values.fund_code);
-      formData.append('authors', JSON.stringify(values.authors));
+      formData.append('authors', JSON.stringify(values.authors || []));
       if (values.attachment instanceof File) {
         formData.append('attachment', values.attachment);
       }
 
-      const response = await method(endpoint, formData, {
+      const response = await api.put(endpoint, formData, {
         headers: { 'Content-Type': 'multipart/form-data' },
         onUploadProgress: (progressEvent) => {
           if (progressEvent.total) {
@@ -192,7 +251,6 @@ export default function AuthorPaperFormPage({ mode }) {
           }
         }
       });
-
       return response.data;
     },
     onSuccess: (result) => {
@@ -242,6 +300,32 @@ export default function AuthorPaperFormPage({ mode }) {
     await Promise.all([ensureByType(zhList, 'zh'), ensureByType(enList, 'en')]);
   };
 
+  // 识别 keywords_new：查询数据库，无精确匹配的作为新关键词
+  const collectNewKeywords = async (zhList, enList) => {
+    const result = [];
+    const checkByType = async (names, type) => {
+      const searchEndpoint = type === 'en' ? endpoints.keywords.searchEn : endpoints.keywords.searchZh;
+      for (const rawName of names) {
+        const name = (rawName || '').trim();
+        if (!name) continue;
+        try {
+          const resp = await api.get(searchEndpoint, { params: { query: name } });
+          const existed = (Array.isArray(resp.data) ? resp.data : []).some(
+            (item) => (item.keyword_name || '').trim() === name
+          );
+          if (!existed) {
+            result.push({ name, type });
+          }
+        } catch (_) {
+          // 出错时不打断整体提交，保守视为“新关键词”
+          result.push({ name, type });
+        }
+      }
+    };
+    await Promise.all([checkByType(zhList, 'zh'), checkByType(enList, 'en')]);
+    return result;
+  };
+
   const handleSubmit = async (values) => {
     if (!isEdit && !values.attachment) {
       form.setFieldError('attachment', '请上传稿件附件');
@@ -250,13 +334,14 @@ export default function AuthorPaperFormPage({ mode }) {
     // 关键词去重与去空格
     const zh = sanitizeKeywords(values.keywords_zh);
     const en = sanitizeKeywords(values.keywords_en);
-    // 确保数据库存在新关键词（仅在提交时创建）
-    await ensureKeywordsExist(zh, en);
-    // 提交论文
+    // 识别新关键词用于 keywords_new 字段
+    const keywordsNew = await collectNewKeywords(zh, en);
+    // 提交论文（新建：两步流；编辑：沿用原逻辑）
     mutation.mutate({
       ...values,
       keywords_zh: zh,
-      keywords_en: en
+      keywords_en: en,
+      keywords_new: keywordsNew
     });
   };
 

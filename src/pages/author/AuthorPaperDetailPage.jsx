@@ -122,6 +122,66 @@ export default function AuthorPaperDetailPage() {
   // 仅在小修或大修评审意见下展示上传区，与业务约定保持一致。
   const canSubmitRevision = ['Minor Revision', 'Major Revision'].includes(reviewStatus);
 
+  const handleDownload = async () => {
+    const parseFilename = (disposition) => {
+      if (!disposition) return null;
+      const star = /filename\*=(?:UTF-8''|)([^;\n]+)/i.exec(disposition);
+      if (star && star[1]) {
+        try {
+          return decodeURIComponent(star[1].replace(/\"/g, '').trim());
+        } catch (_) {
+          return star[1].replace(/\"/g, '').trim();
+        }
+      }
+      const normal = /filename=("?)([^";\n]+)\1/i.exec(disposition);
+      if (normal && normal[2]) return normal[2].trim();
+      return null;
+    };
+    const extFromMime = (mime) => {
+      const m = (mime || '').toLowerCase();
+      if (m.includes('pdf')) return 'pdf';
+      if (m.includes('msword')) return 'doc';
+      if (m.includes('officedocument.wordprocessingml.document')) return 'docx';
+      if (m.includes('zip')) return 'zip';
+      if (m.includes('rar')) return 'rar';
+      if (m.includes('7z')) return '7z';
+      if (m.includes('jpeg')) return 'jpg';
+      if (m.includes('jpg')) return 'jpg';
+      if (m.includes('png')) return 'png';
+      if (m.includes('gif')) return 'gif';
+      if (m.includes('plain')) return 'txt';
+      return 'bin';
+    };
+
+    try {
+      const resp = await api.get(endpoints.papers.download(paperId), { responseType: 'blob' });
+      const disposition = resp.headers['content-disposition'] || resp.headers['Content-Disposition'];
+      const blob = resp.data;
+      const mime = blob?.type || resp.headers['content-type'] || resp.headers['Content-Type'] || '';
+
+      let filename = parseFilename(disposition) || `paper-${paperId}`;
+      if (!/\.[a-z0-9]+$/i.test(filename)) {
+        const ext = extFromMime(mime);
+        filename = `${filename}.${ext}`;
+      }
+
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      notifications.show({
+        title: '下载失败',
+        message: error.friendlyMessage || '文件下载失败',
+        color: 'red'
+      });
+    }
+  };
+
   return (
     <Stack gap="xl">
       <Group justify="space-between">
@@ -210,18 +270,7 @@ export default function AuthorPaperDetailPage() {
             ))}
           </Stack>
           <Text fw={600}>附件</Text>
-          {paper?.attachment_url ? (
-            <Button
-              component="a"
-              href={paper.attachment_url}
-              target="_blank"
-              leftSection={<IconDownload size={16} />}
-            >
-              下载附件
-            </Button>
-          ) : (
-            <Text>暂无附件</Text>
-          )}
+          <Button onClick={handleDownload} leftSection={<IconDownload size={16} />}>下载附件</Button>
         </Stack>
       </Card>
 

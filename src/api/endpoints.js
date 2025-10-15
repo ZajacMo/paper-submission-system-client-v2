@@ -28,7 +28,9 @@ export const endpoints = {
   },
   papers: {
     base: '/api/papers',
+    uploadAttachment: '/api/papers/upload-attachment',
     detail: (id) => `/api/papers/${id}`,
+    download: (id) => `/api/papers/${id}/download`,
     integrity: (id) => `/api/papers/${id}/integrity`,
     progress: (id) => `/api/papers/${id}/progress`,
     progressList: '/api/papers/progress'
