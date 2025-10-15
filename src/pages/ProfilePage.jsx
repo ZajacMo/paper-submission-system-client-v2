@@ -710,11 +710,16 @@ function InstitutionField({
         if (canceled) return;
         const list = Array.isArray(response.data) ? response.data : [];
         setSuggestions(list);
-        setAllowManualEntry(!value.institution_id && list.length === 0);
+        // 允许在无“完全匹配”时进行手动创建（即便存在部分匹配结果）
+        const hasExactMatch = list.some(
+          (item) => (item?.name || "").trim().toLowerCase() === trimmedName.toLowerCase()
+        );
+        setAllowManualEntry(!value.institution_id && !hasExactMatch);
       })
       .catch(() => {
         if (canceled) return;
         setSuggestions([]);
+        // 搜索失败时允许手动创建（由保存或回车行为再做防重校验）
         setAllowManualEntry(!value.institution_id);
       })
       .finally(() => {
@@ -749,6 +754,70 @@ function InstitutionField({
     }
     if (!nextValue) {
       setSuggestions([]);
+    }
+  };
+
+  const handleNameKeyDown = async (event) => {
+    if (!isEditing) return;
+    if (event.key !== "Enter") return;
+    event.preventDefault();
+    const trimmedName = (form.values.institutions?.[index]?.name || "").trim();
+    if (!trimmedName) return;
+
+    try {
+      // 再次从后端确认是否存在完全匹配，避免误创建重复机构
+      let list = suggestions;
+      if (!Array.isArray(list) || list.length === 0) {
+        const resp = await api.get(endpoints.institutions.search, {
+          params: { name: trimmedName },
+        });
+        list = Array.isArray(resp.data) ? resp.data : [];
+      }
+
+      const exact = list.find(
+        (item) => (item?.name || "").trim().toLowerCase() === trimmedName.toLowerCase()
+      );
+      if (exact) {
+        // 存在完全匹配，则直接选中已有机构
+        handleSuggestionSelect(exact);
+        return;
+      }
+
+      // 无完全匹配，创建新机构（若已填写城市/邮编则一并提交）
+      const currentCity = (form.values.institutions?.[index]?.city || "").trim();
+      const currentZip = (form.values.institutions?.[index]?.zip_code || "").trim();
+      const payload = { name: trimmedName };
+      if (currentCity) payload.city = currentCity;
+      if (currentZip) payload.zip_code = currentZip;
+
+      const response = await api.post(endpoints.institutions.create, payload);
+      const createdId = response.data?.institution_id ?? response.data?.id;
+      if (!createdId) {
+        // 后端未返回ID，视为失败
+        notifications?.show?.({ color: "red", message: "创建机构失败" });
+        return;
+      }
+
+      form.setFieldValue(namePath, trimmedName);
+      form.setFieldValue(idPath, toStringOrEmpty(createdId));
+      if (!currentCity && response.data?.city) {
+        form.setFieldValue(cityPath, response.data.city);
+      }
+      if (!currentZip && (response.data?.zip_code || response.data?.postal_code)) {
+        form.setFieldValue(zipPath, response.data.zip_code || response.data.postal_code);
+      }
+      form.setFieldValue(`institutions.${index}.is_new`, false);
+      setAllowManualEntry(false);
+      setSuggestions([]);
+      notifications?.show?.({ color: "green", message: "机构已创建并选中" });
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 409) {
+        // 若后端返回冲突，提示从列表选择
+        notifications?.show?.({ color: "orange", message: "机构已存在，请从列表中选择" });
+      } else {
+        notifications?.show?.({ color: "red", message: "创建机构失败，请稍后重试" });
+      }
     }
   };
 
@@ -794,6 +863,7 @@ function InstitutionField({
           label="单位名称"
           value={nameValue}
           onChange={handleNameChange}
+          onKeyDown={handleNameKeyDown}
           onBlur={nameField.onBlur}
           onFocus={nameField.onFocus}
           error={nameField.error}
