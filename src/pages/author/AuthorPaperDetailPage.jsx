@@ -14,7 +14,9 @@ import {
   Stack,
   Text,
   Title,
-  Timeline
+  Timeline,
+  SimpleGrid,
+  Table
 } from '@mantine/core';
 import { IconDownload, IconSend } from '@tabler/icons-react';
 import { useParams, useNavigate } from 'react-router-dom';
@@ -98,6 +100,12 @@ export default function AuthorPaperDetailPage() {
     }
   });
 
+  // 关键词可能是字符串数组，或 [id, label] 形式的二维数组，这里做统一处理
+  const normalizeKeywords = (list) => {
+    if (!Array.isArray(list)) return [];
+    return list.map((item) => (Array.isArray(item) ? item[1] : item)).filter(Boolean);
+  };
+
   const submissionDate = paper?.submission_date;
 
   const timelineStages = useMemo(() => {
@@ -143,23 +151,56 @@ export default function AuthorPaperDetailPage() {
           <Text>{paper?.abstract_zh || '—'}</Text>
           <Text fw={600}>英文摘要</Text>
           <Text>{paper?.abstract_en || '—'}</Text>
-          <Text fw={600}>关键词</Text>
-          <Group gap="xs">
-            {(paper?.keywords_zh || []).map((keyword) => (
-              <Badge key={keyword} color="blue" variant="light">
-                {keyword}
-              </Badge>
-            ))}
-            {(paper?.keywords_en || []).map((keyword) => (
-              <Badge key={keyword} color="grape" variant="light">
-                {keyword}
-              </Badge>
-            ))}
-          </Group>
-          <Text fw={600}>资助基金</Text>
-          <Text>
-            {paper?.fund_name || '—'} {paper?.fund_code ? `(${paper.fund_code})` : ''}
-          </Text>
+          <SimpleGrid cols={{ base: 1, md: 2 }}>
+            <Stack gap={4}>
+              <Text fw={600}>中文关键词</Text>
+              <Group gap="xs">
+                {normalizeKeywords(paper?.keywords_zh).map((keyword, idx) => (
+                  <Badge key={`zh-${idx}`} color="blue" variant="light">
+                    {keyword}
+                  </Badge>
+                ))}
+                {normalizeKeywords(paper?.keywords_zh).length === 0 && (
+                  <Text c="dimmed">—</Text>
+                )}
+              </Group>
+            </Stack>
+            <Stack gap={4}>
+              <Text fw={600}>英文关键词</Text>
+              <Group gap="xs">
+                {normalizeKeywords(paper?.keywords_en).map((keyword, idx) => (
+                  <Badge key={`en-${idx}`} color="grape" variant="light">
+                    {keyword}
+                  </Badge>
+                ))}
+                {normalizeKeywords(paper?.keywords_en).length === 0 && (
+                  <Text c="dimmed">—</Text>
+                )}
+              </Group>
+            </Stack>
+          </SimpleGrid>
+
+          <Text fw={600}>资助资金</Text>
+          {Array.isArray(paper?.funds) && paper.funds.length > 0 ? (
+            <Table striped withBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>项目名称</Table.Th>
+                  <Table.Th>项目编号</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {paper.funds.map((fund) => (
+                  <Table.Tr key={fund.fund_id || `${fund.project_name}-${fund.project_number}`}>
+                    <Table.Td>{fund.project_name || '—'}</Table.Td>
+                    <Table.Td>{fund.project_number || '—'}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          ) : (
+            <Text>—</Text>
+          )}
           <Text fw={600}>作者列表</Text>
           <Stack gap={4}>
             {(paper?.authors || []).map((author) => (
