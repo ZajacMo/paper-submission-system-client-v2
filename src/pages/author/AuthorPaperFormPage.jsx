@@ -85,29 +85,73 @@ export default function AuthorPaperFormPage({ mode }) {
     queryFn: async () => {
       const response = await api.get(endpoints.papers.detail(paperId));
       return response.data;
-    },
-    onSuccess: (paper) => {
-      form.setValues({
-        title_zh: paper.title_zh || '',
-        title_en: paper.title_en || '',
-        abstract_zh: paper.abstract_zh || '',
-        abstract_en: paper.abstract_en || '',
-        keywords_zh: paper.keywords_zh || [],
-        keywords_en: paper.keywords_en || [],
-        fund_name: paper.fund_name || '',
-        fund_code: paper.fund_code || '',
-        authors:
-          paper.authors?.map((author) => ({
-            author_id: author.author_id,
-            institution_id: author.institution_id
-          })) || [{ author_id: null, institution_id: null }],
-        attachment: null
-      });
-      setExistingFile(paper.attachment_url || null);
-      // 如果已有资助编号，默认锁定编号输入框
-      setFundCodeLocked(Boolean(paper.fund_code));
     }
   });
+
+  // 处理论文数据填充
+  useEffect(() => {
+    if (paperData && isEdit) {
+      // 处理关键词数组格式：API返回的是 [["id", "keyword"], ...] 格式
+      const processKeywords = (keywordArray) => {
+        if (!Array.isArray(keywordArray)) return [];
+        return keywordArray.map(item => {
+          if (Array.isArray(item) && item.length >= 2) {
+            return item[1]; // 取关键词文本，忽略ID
+          }
+          return typeof item === 'string' ? item : '';
+        }).filter(Boolean);
+      };
+
+      // 处理作者信息：包含姓名、机构和通讯作者标识
+      const processAuthors = (authorsArray) => {
+        if (!Array.isArray(authorsArray)) return [{ author_id: null, institution_id: null }];
+        return authorsArray.map(author => ({
+          author_id: author.author_id || null,
+          author_info: author.author_id ? {
+            author_id: author.author_id,
+            name: author.name || '',
+          } : null,
+          institution_id: author.institution_id || null,
+          institution_info: author.institution_id ? {
+            institution_id: author.institution_id,
+            name: author.institution_name || '',
+          } : null,
+          is_corresponding: Boolean(author.is_corresponding)
+        }));
+      };
+
+      // 处理基金信息：提取第一个基金的名称和编号
+      const processFunds = (fundsArray) => {
+        if (!Array.isArray(fundsArray) || fundsArray.length === 0) {
+          return { fund_name: '', fund_code: '' };
+        }
+        const firstFund = fundsArray[0];
+        return {
+          fund_name: firstFund.project_name || '',
+          fund_code: firstFund.project_number || ''
+        };
+      };
+
+      const fundInfo = processFunds(paperData.funds);
+      
+      form.setValues({
+        title_zh: paperData.title_zh || '',
+        title_en: paperData.title_en || '',
+        abstract_zh: paperData.abstract_zh || '',
+        abstract_en: paperData.abstract_en || '',
+        keywords_zh: processKeywords(paperData.keywords_zh),
+        keywords_en: processKeywords(paperData.keywords_en),
+        fund_name: fundInfo.fund_name,
+        fund_code: fundInfo.fund_code,
+        authors: processAuthors(paperData.authors),
+        attachment: null
+      });
+      
+      setExistingFile(paperData.attachment_url || null);
+      // 如果已有资助编号，默认锁定编号输入框
+      setFundCodeLocked(Boolean(fundInfo.fund_code));
+    }
+  }, [paperData, isEdit, form]);
 
   /**
    * 非编辑态时默认把当前登录作者写入 authors 列表。

@@ -17,6 +17,7 @@ export default function InstitutionSearch({
   required = false,
   disabled = false,
   authorId = null,
+  institutionInfo = null, // 新增：机构信息对象
   error = null,
 }) {
   const [searchValue, setSearchValue] = useState("");
@@ -45,11 +46,18 @@ export default function InstitutionSearch({
   // 当前选中的机构信息
   const selectedInstitution = useMemo(() => {
     if (!value) return null;
+    
+    // 优先使用传入的机构信息
+    if (institutionInfo && institutionInfo.institution_id === value) {
+      return institutionInfo;
+    }
+    
+    // 从查询结果中查找
     return (
       institutions.find((inst) => inst.institution_id === value) ||
       (typeof value === "object" ? value : null)
     );
-  }, [value, institutions]);
+  }, [value, institutions, institutionInfo]);
 
   // 显示文本
   const displayValue = useMemo(() => {
@@ -241,5 +249,6 @@ InstitutionSearch.propTypes = {
   required: PropTypes.bool,
   disabled: PropTypes.bool,
   authorId: PropTypes.number,
+  institutionInfo: PropTypes.object, // 新增：机构信息对象
   error: PropTypes.string,
 };

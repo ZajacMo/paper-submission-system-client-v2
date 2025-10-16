@@ -129,6 +129,7 @@ export default function AuthorInstitutionInput({
               required={index === 0}
               disabled={isInstitutionDisabled}
               authorId={value.author_id}
+              institutionInfo={value.institution_info}
               error={errors.institution_id}
             />
           </div>
@@ -162,6 +163,7 @@ AuthorInstitutionInput.propTypes = {
     author_id: PropTypes.number,
     author_info: PropTypes.object,
     institution_id: PropTypes.number,
+    institution_info: PropTypes.object, // 新增：机构信息对象
   }),
   onChange: PropTypes.func.isRequired,
   onRemove: PropTypes.func,
