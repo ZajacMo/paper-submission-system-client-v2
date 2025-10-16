@@ -63,6 +63,7 @@ export default function AuthorPaperFormPage({ mode }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [existingFile, setExistingFile] = useState(null);
   const [fundCodeLocked, setFundCodeLocked] = useState(true);
+  const [hasPrefilledEditForm, setHasPrefilledEditForm] = useState(false);
 
   // 表单实例：依据 mode 加载不同的 Zod schema。
   const form = useForm({
@@ -133,7 +134,16 @@ export default function AuthorPaperFormPage({ mode }) {
       };
 
       const fundInfo = processFunds(paperData.funds);
-      
+
+      setExistingFile(paperData.attachment_url || null);
+
+      if (hasPrefilledEditForm) {
+        return;
+      }
+
+      // 如果已有资助编号，默认锁定编号输入框
+      setFundCodeLocked(Boolean(fundInfo.fund_code));
+
       form.setValues({
         title_zh: paperData.title_zh || '',
         title_en: paperData.title_en || '',
@@ -146,12 +156,15 @@ export default function AuthorPaperFormPage({ mode }) {
         authors: processAuthors(paperData.authors),
         attachment: null
       });
-      
-      setExistingFile(paperData.attachment_url || null);
-      // 如果已有资助编号，默认锁定编号输入框
-      setFundCodeLocked(Boolean(fundInfo.fund_code));
+      setHasPrefilledEditForm(true);
     }
-  }, [paperData, isEdit, form]);
+  }, [paperData, isEdit, form, hasPrefilledEditForm]);
+
+  useEffect(() => {
+    if (isEdit) {
+      setHasPrefilledEditForm(false);
+    }
+  }, [isEdit, paperId]);
 
   /**
    * 非编辑态时默认把当前登录作者写入 authors 列表。
