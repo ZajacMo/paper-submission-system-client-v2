@@ -62,6 +62,7 @@ export default function AuthorPaperFormPage({ mode }) {
 
   const [uploadProgress, setUploadProgress] = useState(0);
   const [existingFile, setExistingFile] = useState(null);
+  const [existingAttachmentPath, setExistingAttachmentPath] = useState(null);
   const [fundCodeLocked, setFundCodeLocked] = useState(true);
   const [hasPrefilledEditForm, setHasPrefilledEditForm] = useState(false);
 
@@ -135,6 +136,24 @@ export default function AuthorPaperFormPage({ mode }) {
 
       const fundInfo = processFunds(paperData.funds);
 
+      const attachmentPath =
+        paperData.attachment_path ||
+        (() => {
+          const url = paperData.attachment_url;
+          if (!url) return null;
+          try {
+            const base =
+              typeof window !== 'undefined' && window.location?.origin
+                ? window.location.origin
+                : 'http://localhost';
+            const parsed = new URL(url, base);
+            return parsed.pathname?.replace(/^\/+/, '') || null;
+          } catch (_) {
+            return typeof url === 'string' && url.startsWith('uploads/') ? url : null;
+          }
+        })();
+
+      setExistingAttachmentPath(attachmentPath);
       setExistingFile(paperData.attachment_url || null);
 
       if (hasPrefilledEditForm) {
@@ -218,40 +237,78 @@ export default function AuthorPaperFormPage({ mode }) {
   /**
    * 提交/更新论文：
    * - 新建：先上传附件（/api/papers/upload-attachment），取返回的 path 作为 attachment_path，再以 JSON 提交 /api/papers
-   * - 编辑：沿用原有逻辑（保持最小改动），仍支持附件变更
+   * - 编辑：若更换附件，同样先上传获取路径，然后以 JSON PUT 更新
    * 上传进度通过 Axios onUploadProgress 收集，以便前端展示。
    */
+  const mapAuthorsForSubmission = (authorList = []) => {
+    const authors = [];
+    const institutions = [];
+    const isCorresponding = [];
+
+    authorList.forEach((item) => {
+      if (item?.author_id == null || item.author_id === '') {
+        return;
+      }
+      authors.push(String(item.author_id));
+      if (item?.institution_id != null && item.institution_id !== '') {
+        institutions.push(String(item.institution_id));
+      }
+      const flag =
+        typeof item?.is_corresponding === 'boolean'
+          ? item.is_corresponding
+          : authors.length === 1;
+      isCorresponding.push(flag);
+    });
+
+    return { authors, institutions, isCorresponding };
+  };
+
+  const buildFundPayload = (values) => {
+    const payload = {};
+    const fundName = (values.fund_name || '').trim();
+    const fundCode = (values.fund_code || '').trim();
+
+    if (fundName) {
+      payload.funds = [fundName];
+      if (!fundCodeLocked) {
+        payload.funds_new = [{ name: fundName, number: fundCode || fundName }];
+      }
+    }
+
+    return payload;
+  };
+
+  const uploadAttachmentFile = async (file) => {
+    const fd = new FormData();
+    fd.append('attachment', file);
+    const uploadResp = await api.post(endpoints.papers.uploadAttachment, fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      onUploadProgress: (progressEvent) => {
+        if (progressEvent.total) {
+          const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(percent);
+        }
+      }
+    });
+
+    const attachmentPath = uploadResp?.data?.file?.path;
+    if (!attachmentPath) {
+      throw new Error('附件上传失败：未返回路径');
+    }
+    return attachmentPath;
+  };
+
   const mutation = useMutation({
     mutationFn: async (values) => {
+      const { authors, institutions, isCorresponding } = mapAuthorsForSubmission(values.authors);
+      const fundPayload = buildFundPayload(values);
+
       if (!isEdit) {
         // 第一步：上传附件，仅发送文件
-        const fd = new FormData();
-        if (values.attachment instanceof File) {
-          fd.append('attachment', values.attachment);
+        if (!(values.attachment instanceof File)) {
+          throw new Error('请上传稿件附件');
         }
-        const uploadResp = await api.post(endpoints.papers.uploadAttachment, fd, {
-          headers: { 'Content-Type': 'multipart/form-data' },
-          onUploadProgress: (progressEvent) => {
-            if (progressEvent.total) {
-              const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-              setUploadProgress(percent);
-            }
-          }
-        });
-
-        const attachmentPath = uploadResp?.data?.file?.path;
-        if (!attachmentPath) {
-          throw new Error('附件上传失败：未返回路径');
-        }
-
-        // 映射 authors / institutions / is_corresponding
-        const authors = (values.authors || [])
-          .map((a) => (a?.author_id != null ? String(a.author_id) : null))
-          .filter(Boolean);
-        const institutions = (values.authors || [])
-          .map((a) => (a?.institution_id != null ? a.institution_id : null))
-          .filter((id) => id !== null);
-        const isCorresponding = authors.map((_, idx) => idx === 0);
+        const attachmentPath = await uploadAttachmentFile(values.attachment);
 
         const body = {
           title_zh: values.title_zh,
@@ -264,50 +321,39 @@ export default function AuthorPaperFormPage({ mode }) {
           attachment_path: attachmentPath,
           authors,
           institutions,
-          is_corresponding: isCorresponding
+          is_corresponding: isCorresponding,
+          ...fundPayload
         };
-
-        // 资金：精确匹配时用 funds；否则用 funds_new（两者只能有一个）
-        const fundName = (values.fund_name || '').trim();
-        const fundCode = (values.fund_code || '').trim();
-        if (fundName) {
-          // 始终在 funds 中包含基金名称
-          body.funds = [fundName];
-          // 当非精确匹配（数据库不存在）时，同时提供 funds_new
-          if (!fundCodeLocked) {
-            body.funds_new = [{ name: fundName, number: fundCode || fundName }];
-          }
-        }
 
         const response = await api.post(endpoints.papers.base, body);
         return response.data;
       }
 
-      // 编辑模式：保留原有 multipart/form-data 以减少对现有后端约定的影响
       const endpoint = endpoints.papers.detail(paperId);
-      const formData = new FormData();
-      formData.append('title_zh', values.title_zh);
-      if (values.title_en) formData.append('title_en', values.title_en);
-      formData.append('abstract_zh', values.abstract_zh);
-      if (values.abstract_en) formData.append('abstract_en', values.abstract_en);
-      formData.append('keywords_zh', JSON.stringify(values.keywords_zh || []));
-      formData.append('keywords_en', JSON.stringify(values.keywords_en || []));
-      if (values.fund_name) formData.append('fund_name', values.fund_name);
-      if (values.fund_code) formData.append('fund_code', values.fund_code);
-      formData.append('authors', JSON.stringify(values.authors || []));
+      let attachmentPath = existingAttachmentPath;
       if (values.attachment instanceof File) {
-        formData.append('attachment', values.attachment);
+        attachmentPath = await uploadAttachmentFile(values.attachment);
       }
 
-      const response = await api.put(endpoint, formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total) {
-            const percent = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            setUploadProgress(percent);
-          }
-        }
-      });
+      const body = {
+        title_zh: values.title_zh,
+        title_en: values.title_en || '',
+        abstract_zh: values.abstract_zh,
+        abstract_en: values.abstract_en || '',
+        keywords_zh: values.keywords_zh || [],
+        keywords_en: values.keywords_en || [],
+        keywords_new: values.keywords_new || [],
+        authors,
+        institutions,
+        is_corresponding: isCorresponding,
+        ...fundPayload
+      };
+
+      if (attachmentPath) {
+        body.attachment_path = attachmentPath;
+      }
+
+      const response = await api.put(endpoint, body);
       return response.data;
     },
     onSuccess: (result) => {
