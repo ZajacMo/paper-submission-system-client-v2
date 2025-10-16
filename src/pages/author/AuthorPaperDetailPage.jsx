@@ -32,6 +32,7 @@ import {
   getReviewStatusLabel,
   normalizeReviewStatus
 } from '../../utils/reviewStatus.js';
+import { useAuth } from '../../features/auth/AuthProvider.jsx';
 
 export default function AuthorPaperDetailPage() {
   const { paperId } = useParams();
@@ -39,6 +40,7 @@ export default function AuthorPaperDetailPage() {
   const queryClient = useQueryClient();
   const [revisionFile, setRevisionFile] = useState(null);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const { userId } = useAuth();
 
   // 单篇论文详情：缓存 key 带上 paperId，方便提交后针对性失效。
   const { data: paper, isLoading } = useQuery({
@@ -121,6 +123,16 @@ export default function AuthorPaperDetailPage() {
   const reviewStatus = normalizeReviewStatus(paper?.status);
   // 仅在小修或大修评审意见下展示上传区，与业务约定保持一致。
   const canSubmitRevision = ['Minor Revision', 'Major Revision'].includes(reviewStatus);
+  const isCorrespondingAuthor = useMemo(() => {
+    if (!paper?.authors || userId == null) {
+      return false;
+    }
+    const normalizedUserId = String(userId);
+    return paper.authors.some(
+      (author) =>
+        author?.is_corresponding && author?.author_id != null && String(author.author_id) === normalizedUserId
+    );
+  }, [paper?.authors, userId]);
 
   const handleDownload = async () => {
     const parseFilename = (disposition) => {
@@ -191,9 +203,11 @@ export default function AuthorPaperDetailPage() {
             提交日期：{paper?.submission_date ? dayjs(paper.submission_date).format('YYYY-MM-DD') : '—'}
           </Text>
         </div>
-        <Button variant="light" onClick={() => navigate(`/author/papers/${paperId}/edit`)}>
-          编辑信息
-        </Button>
+        {isCorrespondingAuthor && (
+          <Button variant="light" onClick={() => navigate(`/author/papers/${paperId}/edit`)}>
+            编辑信息
+          </Button>
+        )}
       </Group>
 
       <Card withBorder shadow="sm" radius="md" pos="relative">

@@ -65,6 +65,7 @@ export default function AuthorPaperFormPage({ mode }) {
   const [existingAttachmentPath, setExistingAttachmentPath] = useState(null);
   const [fundCodeLocked, setFundCodeLocked] = useState(true);
   const [hasPrefilledEditForm, setHasPrefilledEditForm] = useState(false);
+  const [canEdit, setCanEdit] = useState(!isEdit);
 
   // 表单实例：依据 mode 加载不同的 Zod schema。
   const form = useForm({
@@ -184,6 +185,35 @@ export default function AuthorPaperFormPage({ mode }) {
       setHasPrefilledEditForm(false);
     }
   }, [isEdit, paperId]);
+
+  useEffect(() => {
+    if (!isEdit || !paperData || userId == null) {
+      if (!isEdit) {
+        setCanEdit(true);
+      }
+      return;
+    }
+
+    const normalizedUserId = String(userId);
+    const correspondingAuthors = Array.isArray(paperData.authors)
+      ? paperData.authors.filter((author) => author?.is_corresponding)
+      : [];
+    const hasPermission = correspondingAuthors.some(
+      (author) => author?.author_id != null && String(author.author_id) === normalizedUserId
+    );
+
+    setCanEdit(hasPermission);
+
+    if (!hasPermission) {
+      const redirectPath = paperId ? `/author/papers/${paperId}` : '/author/papers';
+      notifications.show({
+        title: '无法编辑论文',
+        message: '仅通讯作者可编辑该论文',
+        color: 'red'
+      });
+      navigate(redirectPath);
+    }
+  }, [isEdit, paperData, userId, navigate, paperId]);
 
   /**
    * 非编辑态时默认把当前登录作者写入 authors 列表。
@@ -430,6 +460,14 @@ export default function AuthorPaperFormPage({ mode }) {
   };
 
   const handleSubmit = async (values) => {
+    if (isEdit && !canEdit) {
+      notifications.show({
+        title: '无法提交修改',
+        message: '仅通讯作者可编辑该论文',
+        color: 'red'
+      });
+      return;
+    }
     if (!isEdit && !values.attachment) {
       form.setFieldError('attachment', '请上传稿件附件');
       return;
