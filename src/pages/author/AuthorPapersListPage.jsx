@@ -114,16 +114,9 @@ export default function AuthorPapersListPage() {
             <Stack gap={4}>
               <Text fw={600}>{paper.title_zh}</Text>
               {paper.title_en && (
-                <HoverCard width={320} shadow="sm">
-                  <HoverCard.Target>
-                    <Text size="sm" c="blue">
-                      英文标题
-                    </Text>
-                  </HoverCard.Target>
-                  <HoverCard.Dropdown>
-                    <Text size="sm">{paper.title_en}</Text>
-                  </HoverCard.Dropdown>
-                </HoverCard>
+                <Text size="sm" c="dimmed">
+                  {paper.title_en}
+                </Text>
               )}
             </Stack>
           </Table.Td>
