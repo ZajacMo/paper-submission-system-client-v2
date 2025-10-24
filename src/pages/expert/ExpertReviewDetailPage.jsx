@@ -8,13 +8,20 @@ import {
   Text,
   Title,
   Table,
+  Select,
+  Textarea,
+  Divider,
 } from "@mantine/core";
 import { useParams, useNavigate } from "react-router-dom";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import api from "../../api/axios.js";
 import { endpoints } from "../../api/endpoints.js";
 import { notifications } from "@mantine/notifications";
+import { useForm, zodResolver } from "@mantine/form";
+import { z } from "zod";
+import { useMemo, useEffect } from "react";
+import { useAuth } from "../../features/auth/AuthProvider.jsx";
 
 const formatDate = (value, format = "YYYY-MM-DD HH:mm") =>
   value ? dayjs(value).format(format) : "—";
@@ -53,14 +60,101 @@ export default function ExpertReviewDetailPage() {
     },
   });
 
-  const conclusionLabelMap = {
-    Accept: "接受",
-    "Minor Revision": "小修",
-    "Major Revision": "大修",
-    "Not Reviewed": "待审",
-    Reject: "拒稿",
-  };
+  // 新增：获取论文已完成的审稿意见，用于锁定当前专家提交
+  const { data: comments } = useQuery({
+    queryKey: ["paper-comments", paperId],
+    enabled: Boolean(paperId),
+    queryFn: async () => {
+      const response = await api.get(endpoints.reviews.comments(paperId));
+      return response.data ?? [];
+    },
+    placeholderData: [],
+  });
 
+  const { userId } = useAuth();
+
+  // 提取本人的已完成审稿意见（若存在）
+  const myComment = useMemo(() => {
+    const targetExpertId = assignment?.expert_id ?? userId;
+    if (!targetExpertId) return undefined;
+    return Array.isArray(comments)
+      ? comments.find((c) => String(c.expert_id) === String(targetExpertId))
+      : undefined;
+  }, [comments, assignment, userId]);
+
+  const isLocked = useMemo(() => {
+    const statusStr = String(assignment?.status || "").toLowerCase();
+    if (statusStr === "completed") return true;
+    const targetExpertId = assignment?.expert_id ?? userId;
+    if (!targetExpertId) return false;
+    return Array.isArray(comments)
+      ? comments.some(
+          (c) =>
+            String(c.expert_id) === String(targetExpertId) &&
+            String(c.status || "").toLowerCase() === "completed"
+        )
+      : false;
+  }, [assignment, comments, userId]);
+
+  const submitMutation = useMutation({
+    mutationFn: async (payload) => {
+      const resp = await api.put(
+        endpoints.reviews.assignment(assignmentId),
+        payload
+      );
+      return resp;
+    },
+    onSuccess: ({ data }) => {
+      notifications.show({
+        title: "提交成功",
+        message: data?.message || "审稿意见已提交",
+        color: "green",
+      });
+      // 刷新任务列表与论文评论
+      queryClient.invalidateQueries({ queryKey: ["reviews", "assignments"] });
+      if (paperId) {
+        queryClient.invalidateQueries({
+          queryKey: ["paper-comments", paperId],
+        });
+        queryClient.invalidateQueries({ queryKey: ["paper", paperId] });
+      }
+    },
+    onError: (error) => {
+      notifications.show({
+        title: "提交失败",
+        message: error.friendlyMessage || "提交失败",
+        color: "red",
+      });
+    },
+  });
+
+  // userId 已在上方声明
+
+  const form = useForm({
+    initialValues: {
+      conclusion: "",
+      positive_comments: "",
+      negative_comments: "",
+      modification_advice: "",
+    },
+    validate: zodResolver(reviewSchema),
+  });
+
+  // 若存在本人已完成审稿意见，则预填到表单
+  useEffect(() => {
+    if (myComment) {
+      form.setValues({
+        conclusion: myComment.conclusion || "",
+        positive_comments: myComment.positive_comments || "",
+        negative_comments: myComment.negative_comments || "",
+        modification_advice: myComment.modification_advice || "",
+      });
+    }
+  }, [myComment]);
+
+  const handleSubmitReview = form.onSubmit((values) => {
+    submitMutation.mutate(values);
+  });
   const normalizeKeywords = (list) => {
     if (!Array.isArray(list)) return [];
     return list
@@ -137,13 +231,21 @@ export default function ExpertReviewDetailPage() {
     }
   };
 
+  const conclusionLabelMap = {
+    Accept: "接受",
+    "Minor Revision": "小修",
+    "Major Revision": "大修",
+    "Not Reviewed": "待审",
+    Reject: "拒稿",
+  };
+
   const translatedConclusion =
     conclusionLabelMap[assignment?.conclusion] || "待审";
 
   return (
     <Stack>
       <Group justify="space-between">
-        <Title order={2}>审稿任务详情</Title>
+        <Title order={2}>{assignment?.title_zh || paper?.title_zh || "—"}</Title>
         <Button variant="light" onClick={() => navigate(-1)}>
           返回列表
         </Button>
@@ -279,9 +381,87 @@ export default function ExpertReviewDetailPage() {
 
             <Text fw={600}>附件</Text>
             <Button onClick={handleDownload}>下载附件</Button>
+
+            {/* 新增：审稿意见提交区域 */}
+            <Divider my="md" />
+            <Stack gap="sm">
+              <Group justify="space-between">
+                <Title order={4}>提交审稿意见</Title>
+                {isLocked && (
+                  <Badge color="green" variant="outline">
+                    已提交，已锁定
+                  </Badge>
+                )}
+              </Group>
+              <LoadingOverlay
+                visible={submitMutation.isPending}
+                overlayProps={{ blur: 2 }}
+              />
+              <form onSubmit={handleSubmitReview}>
+                <Select
+                  label="审稿结论"
+                  placeholder="请选择结论"
+                  data={conclusionOptions}
+                  value={form.values.conclusion}
+                  onChange={(value) =>
+                    form.setFieldValue("conclusion", value || "")
+                  }
+                  error={form.errors.conclusion}
+                  required
+                  disabled={isLocked}
+                />
+                <Textarea
+                  label="正面意见"
+                  autosize
+                  minRows={3}
+                  {...form.getInputProps("positive_comments")}
+                  disabled={isLocked}
+                />
+                <Textarea
+                  label="负面意见"
+                  autosize
+                  minRows={3}
+                  {...form.getInputProps("negative_comments")}
+                  disabled={isLocked}
+                />
+                <Textarea
+                  label="修改建议"
+                  autosize
+                  minRows={3}
+                  {...form.getInputProps("modification_advice")}
+                  disabled={isLocked}
+                />
+                <Group mt="md">
+                  <Button
+                    type="submit"
+                    disabled={isLocked}
+                    loading={submitMutation.isPending}
+                  >
+                    提交审稿意见
+                  </Button>
+                </Group>
+              </form>
+            </Stack>
           </Stack>
         )}
       </Card>
     </Stack>
   );
 }
+
+// 新增：审稿提交表单校验
+const reviewSchema = z.object({
+  conclusion: z.enum(["Accept", "Minor Revision", "Major Revision", "Reject"], {
+    required_error: "请选择审稿结论",
+  }),
+  positive_comments: z.string().optional(),
+  negative_comments: z.string().optional(),
+  modification_advice: z.string().optional(),
+});
+
+const conclusionOptions = [
+  { value: "Accept", label: "接受" },
+  { value: "Minor Revision", label: "小修" },
+  { value: "Major Revision", label: "大修" },
+  { value: "Reject", label: "拒稿" },
+];

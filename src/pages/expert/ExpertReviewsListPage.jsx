@@ -40,6 +40,15 @@ const statusColorMap = {
   Completed: 'green'
 };
 
+// 审稿结论中文映射
+const conclusionLabelMap = {
+  Accept: '接受',
+  'Minor Revision': '小修',
+  'Major Revision': '大修',
+  'Not Reviewed': '未审稿',
+  Reject: '拒稿'
+};
+
 const formatDate = (value, format = 'YYYY-MM-DD') =>
   value ? dayjs(value).format(format) : '—';
 
@@ -69,7 +78,7 @@ export default function ExpertReviewsListPage() {
           <Table.Td>{formatDate(assignment.assigned_date)}</Table.Td>
           <Table.Td>{formatDate(assignment.assigned_due_date)}</Table.Td>
           <Table.Td>{formatDate(assignment.submission_date, 'YYYY-MM-DD HH:mm')}</Table.Td>
-          <Table.Td>{assignment.conclusion || '—'}</Table.Td>
+          <Table.Td>{conclusionLabelMap[assignment.conclusion] || assignment.conclusion || '—'}</Table.Td>
           <Table.Td>
             <Badge color={statusColorMap[assignment.status] || 'gray'}>
               {statusLabelMap[assignment.status] || assignment.status || '待审中'}

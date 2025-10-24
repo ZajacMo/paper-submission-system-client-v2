@@ -228,6 +228,25 @@ export default function ExpertWithdrawalsPage() {
               <Text fw={500}>申请日期</Text>
               <Text>{formatDateTime(selectedWithdrawal.request_date || selectedWithdrawal.withdrawal_date)}</Text>
             </Group>
+            <Divider />
+            <Group justify="flex-end" mt="sm">
+              <Button
+                onClick={() => {
+                  if (!selectedWithdrawal?.assignment_id) return;
+                  // 立即置灰，进入处理中态，避免重复点击
+                  setSelectedWithdrawal((prev) => ({
+                    ...prev,
+                    status: 'processing'
+                  }));
+                  mutation.mutate({ assignment_id: String(selectedWithdrawal.assignment_id) });
+                }}
+                disabled={mutation.isPending || getStatusMeta(selectedWithdrawal.status).label !== '未提现'}
+                loading={mutation.isPending}
+                aria-label="提交提现申请"
+              >
+                提现
+              </Button>
+            </Group>
           </Stack>
         )}
       </Modal>
