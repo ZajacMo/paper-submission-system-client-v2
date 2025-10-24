@@ -4,51 +4,20 @@ import {
   Card,
   Group,
   LoadingOverlay,
-  Radio,
   Stack,
   Text,
-  Textarea,
   Title,
   Table,
 } from "@mantine/core";
-import { useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { useForm, zodResolver } from "@mantine/form";
-import { z } from "zod";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import dayjs from "dayjs";
 import api from "../../api/axios.js";
 import { endpoints } from "../../api/endpoints.js";
 import { notifications } from "@mantine/notifications";
 
-const statusLabelMap = {
-  Assigned: "待审中",
-  Pending: "待审中",
-  Overdue: "已逾期",
-  Completed: "已完成",
-};
-
-const statusColorMap = {
-  Assigned: "orange",
-  Pending: "orange",
-  Overdue: "red",
-  Completed: "green",
-};
-
 const formatDate = (value, format = "YYYY-MM-DD HH:mm") =>
   value ? dayjs(value).format(format) : "—";
-
-const schema = z.object({
-  conclusion: z.enum(["Accept", "Minor Revision", "Major Revision", "Reject"], {
-    required_error: "请选择结论",
-  }),
-  positive_comments: z.string().min(20, "不少于20字").max(1000, "不超过1000字"),
-  negative_comments: z.string().min(20, "不少于20字").max(1000, "不超过1000字"),
-  modification_advice: z
-    .string()
-    .min(20, "不少于20字")
-    .max(1000, "不超过1000字"),
-});
 
 export default function ExpertReviewDetailPage() {
   const { assignmentId } = useParams();
@@ -81,55 +50,6 @@ export default function ExpertReviewDetailPage() {
     queryFn: async () => {
       const response = await api.get(endpoints.papers.detail(paperId));
       return response.data;
-    },
-  });
-
-  const form = useForm({
-    initialValues: {
-      conclusion: "Accept",
-      positive_comments: "",
-      negative_comments: "",
-      modification_advice: "",
-    },
-    validate: zodResolver(schema),
-  });
-
-  useEffect(() => {
-    if (assignment) {
-      form.setValues({
-        conclusion: assignment.conclusion || "Accept",
-        positive_comments: assignment.positive_comments || "",
-        negative_comments: assignment.negative_comments || "",
-        modification_advice: assignment.modification_advice || "",
-      });
-    }
-  }, [assignment, form]);
-
-  const mutation = useMutation({
-    mutationFn: async (values) => {
-      const payload = {
-        ...values,
-      };
-      const response = await api.put(
-        endpoints.reviews.assignment(assignmentId),
-        payload
-      );
-      return response.data;
-    },
-    onSuccess: () => {
-      notifications.show({
-        title: "审稿意见提交成功",
-        message: "感谢您的审稿",
-        color: "green",
-      });
-      queryClient.invalidateQueries({ queryKey: ["reviews", "assignments"] });
-      navigate("/expert/reviews");
-    },
-    onError: (error) => {
-      const fieldErrors = error.response?.data?.errors;
-      if (fieldErrors) {
-        form.setErrors(fieldErrors);
-      }
     },
   });
 
@@ -361,65 +281,6 @@ export default function ExpertReviewDetailPage() {
             <Button onClick={handleDownload}>下载附件</Button>
           </Stack>
         )}
-      </Card>
-
-      <Card withBorder shadow="sm" radius="md">
-        <Title order={4} mb="md">
-          提交审稿意见
-        </Title>
-        {!assignment && !(isLoading || isFetching) && (
-          <Text c="red" mb="sm">
-            当前未找到对应任务，暂无法提交审稿意见。
-          </Text>
-        )}
-        <form onSubmit={form.onSubmit((values) => mutation.mutate(values))}>
-          <Stack
-            gap="md"
-            style={
-              !assignment ? { pointerEvents: "none", opacity: 0.5 } : undefined
-            }
-          >
-            <Radio.Group
-              label="审稿结论"
-              required
-              {...form.getInputProps("conclusion")}
-            >
-              <Group>
-                <Radio value="Accept" label="接受" />
-                <Radio value="Minor Revision" label="小修" />
-                <Radio value="Major Revision" label="大修" />
-                <Radio value="Reject" label="拒稿" />
-              </Group>
-            </Radio.Group>
-            <Textarea
-              label="积极意见"
-              minRows={4}
-              required
-              {...form.getInputProps("positive_comments")}
-            />
-            <Textarea
-              label="不足之处"
-              minRows={4}
-              required
-              {...form.getInputProps("negative_comments")}
-            />
-            <Textarea
-              label="修改建议"
-              minRows={4}
-              required
-              {...form.getInputProps("modification_advice")}
-            />
-            <Group justify="flex-end">
-              <Button
-                type="submit"
-                loading={mutation.isPending}
-                disabled={!assignment}
-              >
-                提交意见
-              </Button>
-            </Group>
-          </Stack>
-        </form>
       </Card>
     </Stack>
   );
