@@ -6,12 +6,19 @@ import {
   IconLayoutDashboard,
   IconFileText,
   IconCash,
+  IconBell,
   IconUsersGroup,
   IconReportSearch
 } from '@tabler/icons-react';
 import { useAuth } from '../../features/auth/AuthProvider.jsx';
 
 const baseItems = [
+  {
+    label: '通知中心',
+    icon: IconBell,
+    to: '/notifications',
+    roles: ['author']
+  },
   {
     label: '个人信息',
     icon: IconUsersGroup,

@@ -3,6 +3,7 @@ import { AppLayout } from '../components/layout/AppLayout.jsx';
 import { ProtectedRoute } from './ProtectedRoute.jsx';
 import LoginPage from '../pages/LoginPage.jsx';
 import ProfilePage from '../pages/ProfilePage.jsx';
+import NotificationsPage from '../pages/NotificationsPage.jsx';
 import AuthorDashboardPage from '../pages/author/AuthorDashboardPage.jsx';
 import AuthorPapersListPage from '../pages/author/AuthorPapersListPage.jsx';
 import AuthorPaperFormPage from '../pages/author/AuthorPaperFormPage.jsx';
@@ -37,6 +38,8 @@ export function AppRoutes() {
       <Route element={<ProtectedAppShell />}>
         <Route index element={<Navigate to="/login" replace />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/notifications" element={<ProtectedRoute roles={["author"]}><NotificationsPage /></ProtectedRoute>} />
+
         <Route
           path="/author/dashboard"
           element={
