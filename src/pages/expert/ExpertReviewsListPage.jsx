@@ -210,7 +210,7 @@ export default function ExpertReviewsListPage() {
           </Button>
         </Group>
         <Table.ScrollContainer minWidth={960}>
-          <Table striped highlightOnHover withBorder>
+          <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th style={{ width: 90 }}>任务ID</Table.Th>

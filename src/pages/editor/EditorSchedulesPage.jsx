@@ -165,7 +165,7 @@ export default function EditorSchedulesPage() {
 
       <Card withBorder shadow="sm" radius="md" pos="relative">
         <LoadingOverlay visible={isFetching} overlayProps={{ blur: 2 }} />
-        <Table striped withBorder>
+        <Table striped withTableBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>排期ID</Table.Th>

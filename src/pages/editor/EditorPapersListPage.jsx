@@ -169,7 +169,7 @@ export default function EditorPapersListPage() {
             disabled={isPaperIdSearch}
           />
         </Group>
-        <Table striped highlightOnHover withBorder>
+        <Table striped highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>论文ID</Table.Th>

@@ -284,7 +284,7 @@ export default function AuthorPaperDetailPage() {
 
           <Text fw={600}>资助资金</Text>
           {Array.isArray(paper?.funds) && paper.funds.length > 0 ? (
-            <Table striped withBorder>
+            <Table striped withTableBorder>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>项目名称</Table.Th>

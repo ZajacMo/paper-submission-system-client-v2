@@ -133,7 +133,7 @@ export default function ExpertWithdrawalsPage() {
         <Title order={4} mb="md">
           提现记录
         </Title>
-        <Table striped withBorder>
+        <Table striped withTableBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>任务ID</Table.Th>

@@ -197,7 +197,7 @@ export default function AuthorPapersListPage() {
         <Table
           striped
           highlightOnHover
-          withBorder
+          withTableBorder
           horizontalSpacing="md"
           verticalSpacing="sm"
         >

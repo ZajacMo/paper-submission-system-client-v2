@@ -191,7 +191,7 @@ export default function EditorPaymentsPage() {
           />
         </Group>
         {selectedPaper ? (
-          <Table striped withBorder>
+          <Table striped withTableBorder>
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>支付ID</Table.Th>
@@ -257,7 +257,7 @@ export default function EditorPaymentsPage() {
         <Title order={4} mb="md">
           专家提现审批
         </Title>
-        <Table striped withBorder>
+        <Table striped withTableBorder>
           <Table.Thead>
             <Table.Tr>
               <Table.Th>任务ID</Table.Th>
