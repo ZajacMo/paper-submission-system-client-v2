@@ -32,7 +32,19 @@ export function normalizeProgressStatus(status) {
     return null;
   }
   const key = normalized.toLowerCase();
-  return PROGRESS_STATUS_ALIASES[key] || PROGRESS_STATUS_ALIASES[key.replace(/-/g, "_")] || normalized;
+  const alias =
+    PROGRESS_STATUS_ALIASES[key] ||
+    PROGRESS_STATUS_ALIASES[key.replace(/-/g, "_")];
+  if (alias) {
+    return alias;
+  }
+  const labelMatch = RAW_STATUS_SEQUENCE.find(
+    ([, label]) => label === normalized
+  );
+  if (labelMatch) {
+    return labelMatch[0];
+  }
+  return normalized;
 }
 
 export function getProgressStatusLabel(status) {

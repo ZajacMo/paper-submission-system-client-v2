@@ -28,14 +28,14 @@ const readOptions = [
 
 const typeOptions = [
   { label: "全部类型", value: "all" },
-  { label: "审稿通知", value: "Review Assignment" },
+  { label: "修稿通知", value: "Review Assignment" },
   { label: "支付确认", value: "Payment Confirmation" },
   { label: "录用通知", value: "Acceptance Notification" },
   { label: "拒稿通知", value: "Rejection Notification" },
 ];
 
 const typeLabels = {
-  "Review Assignment": "审稿通知",
+  "Review Assignment": "修稿通知",
   "Payment Confirmation": "支付确认",
   "Acceptance Notification": "录用通知",
   "Rejection Notification": "拒稿通知",
@@ -101,6 +101,10 @@ export default function NotificationsPage() {
 
   const isAcceptanceSelected =
     selectedNotification?.notification_type === "Acceptance Notification";
+  const isRevisionSelected =
+    selectedNotification?.notification_type === "Review Assignment";
+  const isRejectionSelected =
+    selectedNotification?.notification_type === "Rejection Notification";
   const selectedPaperId = selectedNotification?.paper_id ?? null;
 
   const {
@@ -110,9 +114,7 @@ export default function NotificationsPage() {
   } = useQuery({
     queryKey: ["payments", "paper", selectedPaperId],
     queryFn: async () => {
-      const response = await api.get(
-        endpoints.payments.paper(selectedPaperId)
-      );
+      const response = await api.get(endpoints.payments.paper(selectedPaperId));
       return response.data;
     },
     enabled: Boolean(isAcceptanceSelected && selectedPaperId),
@@ -157,8 +159,96 @@ export default function NotificationsPage() {
     []
   );
 
+  const shouldLoadPaperDetail = Boolean(
+    selectedPaperId &&
+      (isRejectionSelected || isAcceptanceSelected || isRevisionSelected)
+  );
+
+  const {
+    data: paperDetail,
+    isLoading: isLoadingPaperDetail,
+    isFetching: isFetchingPaperDetail,
+  } = useQuery({
+    queryKey: ["paper-detail", selectedPaperId],
+    queryFn: async () => {
+      const response = await api.get(endpoints.papers.detail(selectedPaperId));
+      return response.data;
+    },
+    enabled: shouldLoadPaperDetail,
+  });
+
   const renderDetailContent = () => {
     if (!selectedNotification) return null;
+
+    const isPaperTitleLoading =
+      shouldLoadPaperDetail && (isLoadingPaperDetail || isFetchingPaperDetail);
+    const rawTitle =
+      paperDetail?.title_zh ??
+      paperDetail?.title_en ??
+      selectedNotification.paper_title_zh ??
+      selectedNotification.paper_title ??
+      selectedNotification.paper_title_en ??
+      selectedNotification.title ??
+      "";
+    const formattedTitle =
+      rawTitle && (rawTitle.includes("《") || rawTitle.includes("》"))
+        ? rawTitle
+        : rawTitle
+        ? `《${rawTitle}》`
+        : "《您的论文》";
+    const showTitleLoading = isPaperTitleLoading && !paperDetail;
+
+    if (isRejectionSelected) {
+      return (
+        <Stack gap="xs">
+          {showTitleLoading && <Text c="dimmed">正在获取论文标题...</Text>}
+          <Text>
+            感谢您向本刊投稿您的论文
+            {formattedTitle}
+            。我们已完成评审程序，并认真考虑了审稿人及编辑部的意见。
+          </Text>
+          <Text>
+            经过充分讨论与评估，我们遗憾地通知您，本刊决定不录用您的稿件发表。具体意见可见论文详细页。
+          </Text>
+          <Text>
+            我们真诚感谢您选择本刊投稿，也希望这些意见能对您后续的研究有所帮助。若您根据审稿意见对论文进行大幅修改，也欢迎将改进后的研究成果再次提交至本刊或其他合适的期刊。
+          </Text>
+          <Text>祝您研究顺利！</Text>
+        </Stack>
+      );
+    }
+
+    if (isRevisionSelected) {
+      const formattedDeadline = selectedNotification.deadline
+        ? dayjs(selectedNotification.deadline).format("YYYY年MM月DD日")
+        : null;
+
+      return (
+        <Stack gap="xs">
+          {showTitleLoading && <Text c="dimmed">正在获取论文标题...</Text>}
+          <Text>
+            感谢您向本刊投稿您的论文
+            {formattedTitle}
+            。您的稿件已完成同行评审。经编辑部与审稿专家综合评议，我们认为该研究具有一定的学术价值和发表潜力，但目前的稿件尚需进一步修改和完善，方可进入下一步审稿流程。
+          </Text>
+          <Text>
+            请您仔细阅读论文详细页的审稿意见，并据此对稿件进行充分修改。修改稿请于
+            {formattedDeadline ? (
+              <Text span fw={500}>
+                {formattedDeadline}
+              </Text>
+            ) : (
+              <Text span fw={500}>系统指定的截止日期</Text>
+            )}
+            前通过投稿系统提交。
+          </Text>
+          <Text>
+            收到您的修改稿后，我们将根据修订质量决定是否进入下一轮审稿或直接录用。
+          </Text>
+          <Text>感谢您对本刊的支持与信任，期待您的修订稿。</Text>
+        </Stack>
+      );
+    }
 
     if (selectedNotification.notification_type === "Acceptance Notification") {
       const formattedDeadline = selectedNotification.deadline
@@ -199,17 +289,20 @@ export default function NotificationsPage() {
 
       return (
         <Stack gap="sm">
+          {showTitleLoading && <Text c="dimmed">正在获取论文标题...</Text>}
           <Text>
-            您的论文已被录用！
+            您的论文{" "}
+            <Text span fw={500}>
+              {formattedTitle}
+            </Text>{" "}
+            已被录用！
             {formattedDeadline ? (
               <>
                 请在{" "}
                 <Text span fw={500}>
                   {formattedDeadline}
-                </Text>
-                {" "}
-                前向下面的账户支付
-                {" "}
+                </Text>{" "}
+                前向下面的账户支付{" "}
                 {hasValidAmount ? (
                   <Text span fw={500}>
                     {amountFormatter.format(rawAmount)}元
@@ -223,8 +316,7 @@ export default function NotificationsPage() {
               </>
             ) : (
               <>
-                请尽快向下面的账户支付
-                {" "}
+                请尽快向下面的账户支付{" "}
                 {hasValidAmount ? (
                   <Text span fw={500}>
                     {amountFormatter.format(rawAmount)}元
@@ -241,12 +333,6 @@ export default function NotificationsPage() {
           {(isLoadingPayment || isFetchingPayment) && (
             <Text c="dimmed">正在获取支付信息...</Text>
           )}
-          {!isLoadingPayment &&
-            !isFetchingPayment &&
-            !hasValidAmount &&
-            paymentRecords.length === 0 && (
-              <Text c="red">暂未找到该论文的支付记录，请联系编辑。</Text>
-            )}
           <Table withTableBorder>
             <Table.Tbody>
               <Table.Tr>
@@ -261,9 +347,7 @@ export default function NotificationsPage() {
               </Table.Tr>
             </Table.Tbody>
           </Table>
-          {isPaid && (
-            <Text c="green">系统已记录支付，无需重复提交。</Text>
-          )}
+          {isPaid && <Text c="green">系统已记录支付，无需重复提交。</Text>}
           <Group justify="flex-start">
             <Button
               onClick={handlePaymentSubmit}

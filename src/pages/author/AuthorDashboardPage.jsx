@@ -32,7 +32,7 @@ import {
 } from "../../utils/reviewStatus.js";
 
 const notificationTypeLabels = {
-  "Review Assignment": "审稿通知",
+  "Review Assignment": "修稿通知",
   "Payment Confirmation": "支付确认",
   "Acceptance Notification": "录用通知",
   "Rejection Notification": "拒稿通知",

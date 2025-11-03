@@ -51,6 +51,19 @@ const notificationSchema = z
     amount: z.number().optional().nullable(),
   })
   .superRefine((data, ctx) => {
+    if (
+      data.notification_type === "Review Assignment" ||
+      data.notification_type === "Acceptance Notification"
+    ) {
+      const deadline = data.deadline;
+      if (!(deadline instanceof Date) || Number.isNaN(deadline.getTime())) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["deadline"],
+          message: "请填写截止时间",
+        });
+      }
+    }
     if (data.notification_type === "Acceptance Notification") {
       const amount = data.amount;
       if (amount === null || amount === undefined || Number.isNaN(amount)) {
@@ -80,8 +93,7 @@ const scheduleSchema = z.object({
 const notificationTypes = [
   { label: "录用通知", value: "Acceptance Notification" },
   { label: "拒稿通知", value: "Rejection Notification" },
-  { label: "大修通知", value: "Major Revision" },
-  { label: "支付确认", value: "Payment Confirmation" },
+  { label: "修稿通知", value: "Review Assignment" },
 ];
 
 const mapExpertToOption = (expert) => {
@@ -233,6 +245,12 @@ export default function EditorPaperDetailPage() {
   const progressLabel = getProgressStatusLabel(
     paper?.progress ?? paper?.status
   );
+  const shouldLoadSchedule = useMemo(() => {
+    if (!paperId) return false;
+    if (!normalizedProgress) return false;
+    const allowedStatuses = new Set(["Published", "Accept"]);
+    return allowedStatuses.has(normalizedProgress);
+  }, [paperId, normalizedProgress]);
 
   const {
     data: scheduleDetail,
@@ -240,10 +258,12 @@ export default function EditorPaperDetailPage() {
     isError: isScheduleError,
   } = useQuery({
     queryKey: ["paper-schedule", paperId],
-    enabled: Boolean(paperId),
+    enabled: shouldLoadSchedule,
     queryFn: async () => {
       try {
-        const response = await api.get(endpoints.schedules.paperDetail(paperId));
+        const response = await api.get(
+          endpoints.schedules.paperDetail(paperId)
+        );
         return response.data ?? null;
       } catch (error) {
         if (error?.response?.status === 404) {
@@ -335,6 +355,9 @@ export default function EditorPaperDetailPage() {
   });
 
   useEffect(() => {
+    if (!shouldLoadSchedule) {
+      return;
+    }
     if (scheduleDetail === undefined) {
       return;
     }
@@ -351,10 +374,9 @@ export default function EditorPaperDetailPage() {
         };
     scheduleForm.setValues(nextValues);
     scheduleForm.resetDirty(nextValues);
-  }, [scheduleDetail, scheduleForm]);
+  }, [scheduleDetail, scheduleForm, shouldLoadSchedule]);
 
-  const scheduleId =
-    scheduleDetail?.schedule_id ?? scheduleDetail?.id ?? null;
+  const scheduleId = scheduleDetail?.schedule_id ?? scheduleDetail?.id ?? null;
 
   const scheduleMutation = useMutation({
     mutationFn: async (values) => {
@@ -426,7 +448,18 @@ export default function EditorPaperDetailPage() {
     ) {
       notificationForm.setFieldValue("amount", null);
     }
-  }, [notificationForm.values.notification_type, notificationForm.values.amount]);
+    if (
+      notificationForm.values.notification_type !== "Review Assignment" &&
+      notificationForm.values.notification_type !== "Acceptance Notification" &&
+      notificationForm.values.deadline !== null
+    ) {
+      notificationForm.setFieldValue("deadline", null);
+    }
+  }, [
+    notificationForm.values.notification_type,
+    notificationForm.values.amount,
+    notificationForm.values.deadline,
+  ]);
 
   const notificationMutation = useMutation({
     mutationFn: async (values) => {
@@ -435,10 +468,17 @@ export default function EditorPaperDetailPage() {
         notification_type: values.notification_type,
       };
       if (
+        (values.notification_type === "Review Assignment" ||
+          values.notification_type === "Acceptance Notification") &&
         values.deadline instanceof Date &&
         !Number.isNaN(values.deadline.getTime())
       ) {
-        payload.deadline = dayjs(values.deadline).format("YYYY-MM-DD HH:mm:ss");
+        payload.deadline = dayjs(values.deadline).format(
+          "YYYY-MM-DDTHH:mm:ss.SSS"
+        );
+      }
+      if (values.notification_type === "Rejection Notification") {
+        payload.deadline = dayjs().format("YYYY-MM-DDTHH:mm:ss.SSS");
       }
       if (values.notification_type === "Acceptance Notification") {
         await api.post(endpoints.payments.base, {
@@ -953,11 +993,7 @@ export default function EditorPaperDetailPage() {
         <Title order={4} mb="sm">
           论文排期
         </Title>
-        <Text
-          size="sm"
-          c="dimmed"
-          mb={canEditSchedule ? "md" : "xs"}
-        >
+        <Text size="sm" c="dimmed" mb={canEditSchedule ? "md" : "xs"}>
           填写期号、卷号与页码，确认稿件的最终出版信息。
         </Text>
         {!canEditSchedule && (
@@ -982,7 +1018,9 @@ export default function EditorPaperDetailPage() {
                 placeholder="例如：2024年第5期"
                 withAsterisk
                 disabled={
-                  !canEditSchedule || scheduleMutation.isPending || isScheduleLoading
+                  !canEditSchedule ||
+                  scheduleMutation.isPending ||
+                  isScheduleLoading
                 }
                 {...scheduleForm.getInputProps("issue_number")}
               />
@@ -991,7 +1029,9 @@ export default function EditorPaperDetailPage() {
                 placeholder="例如：第12卷"
                 withAsterisk
                 disabled={
-                  !canEditSchedule || scheduleMutation.isPending || isScheduleLoading
+                  !canEditSchedule ||
+                  scheduleMutation.isPending ||
+                  isScheduleLoading
                 }
                 {...scheduleForm.getInputProps("volume_number")}
               />
@@ -1000,7 +1040,9 @@ export default function EditorPaperDetailPage() {
                 placeholder="例如：123-135"
                 withAsterisk
                 disabled={
-                  !canEditSchedule || scheduleMutation.isPending || isScheduleLoading
+                  !canEditSchedule ||
+                  scheduleMutation.isPending ||
+                  isScheduleLoading
                 }
                 {...scheduleForm.getInputProps("page_number")}
               />
@@ -1017,7 +1059,9 @@ export default function EditorPaperDetailPage() {
                 type="submit"
                 loading={scheduleMutation.isPending}
                 disabled={
-                  !canEditSchedule || scheduleMutation.isPending || isScheduleLoading
+                  !canEditSchedule ||
+                  scheduleMutation.isPending ||
+                  isScheduleLoading
                 }
               >
                 {scheduleId ? "更新排期" : "保存排期"}
@@ -1055,15 +1099,21 @@ export default function EditorPaperDetailPage() {
               placeholder="请选择要发送的通知类型"
               error={notificationForm.errors.notification_type}
             />
-            <DateTimePicker
-              label="截止时间（可选）"
-              valueFormat="YYYY-MM-DD HH:mm"
-              clearable
-              value={notificationForm.values.deadline}
-              onChange={(value) =>
-                notificationForm.setFieldValue("deadline", value)
-              }
-            />
+            {(notificationForm.values.notification_type ===
+              "Review Assignment" ||
+              notificationForm.values.notification_type ===
+                "Acceptance Notification") && (
+              <DateTimePicker
+                label="截止时间"
+                valueFormat="YYYY-MM-DD HH:mm"
+                clearable={false}
+                value={notificationForm.values.deadline}
+                onChange={(value) =>
+                  notificationForm.setFieldValue("deadline", value)
+                }
+                error={notificationForm.errors.deadline}
+              />
+            )}
             {notificationForm.values.notification_type ===
               "Acceptance Notification" && (
               <NumberInput
