@@ -140,6 +140,29 @@ export default function AuthorPaperDetailPage() {
     return mapped;
   }, [progress, submissionDate]);
 
+  const displayTimelineStages = useMemo(() => {
+    if (!timelineStages || timelineStages.length === 0) {
+      return [];
+    }
+    const lastFinishedIndex = (() => {
+      for (let i = timelineStages.length - 1; i >= 0; i -= 1) {
+        if (timelineStages[i].status === "finished") {
+          return i;
+        }
+      }
+      return -1;
+    })();
+    if (lastFinishedIndex === -1) {
+      return timelineStages;
+    }
+    return timelineStages.filter((stage, index) => {
+      if (index < lastFinishedIndex && stage.status === "processing") {
+        return false;
+      }
+      return true;
+    });
+  }, [timelineStages]);
+
   const normalizedProgress = normalizeProgressStatus(paper?.progress);
   const reviewStatus = normalizeReviewStatus(paper?.status);
   const progressLabel = getProgressStatusLabel(
@@ -385,7 +408,7 @@ export default function AuthorPaperDetailPage() {
           </Text>
         ) : (
           <Timeline bulletSize={24} lineWidth={2}>
-            {timelineStages.map((stage) => (
+            {displayTimelineStages.map((stage) => (
               <Timeline.Item
                 key={stage.key}
                 title={stage.label}
