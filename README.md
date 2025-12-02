@@ -2,7 +2,34 @@
 
 使用 Vite + React + Mantine 构建的论文投稿系统前端，覆盖作者、专家与编辑三种角色的核心业务流程，提供多语言标题录入、文件上传、通知管理、审稿与支付管理等功能。
 
-## 快速开始
+## 部署教程
+
+### postman（推荐）
+
+1. 构建镜像
+
+```bash
+podman build \
+  -t paper-sub-system-frontend \
+  -f Containerfile \
+  --build-arg VITE_API_BASE_URL=<"background url"> \
+  .
+```
+
+- 注意：`VITE_*` 变量为编译期常量，变更后端地址需重新构建镜像
+
+2. 运行容器
+
+```bash
+podman run -d \
+  --name paper-sub-system-frontend \
+  -p 21743:80 \
+  localhost/paper-sub-system-frontend
+```
+
+- 打开浏览器访问 `http://localhost:21743`
+
+### 直接构建
 
 ```bash
 npm install
